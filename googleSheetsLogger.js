@@ -155,6 +155,9 @@ function userAgent(req) {
  * @param {number|string} [row.webSearchRequests]
  * @param {boolean} [row.responseTruncated]
  * @param {string} [row.responseMarkdown]
+ * @param {string} [row.resumeAttached] "yes" | "no"
+ * @param {number|string} [row.resumeChars]
+ * @param {string} [row.resumeParsedText] extracted resume plain text (truncated in-sheet)
  */
 
 /** Avoid Google Sheets interpreting cell as formula (= + - @). */
@@ -170,6 +173,12 @@ function buildRowArray(row) {
   if (md.length > MAX_CELL_CHARS) {
     md = md.slice(0, MAX_CELL_CHARS) + "\n\n[… truncated for Google Sheets cell limit …]";
     truncated = true;
+  }
+  let resumeParsed = row.resumeParsedText ?? "";
+  if (resumeParsed.length > MAX_CELL_CHARS) {
+    resumeParsed =
+      resumeParsed.slice(0, MAX_CELL_CHARS) +
+      "\n\n[… resume truncated for Google Sheets cell limit …]";
   }
   return [
     sheetsSafeCell(row.timestampIso),
@@ -190,6 +199,9 @@ function buildRowArray(row) {
     sheetsSafeCell(row.webSearchRequests ?? ""),
     truncated ? "true" : "false",
     sheetsSafeCell(md),
+    sheetsSafeCell(row.resumeAttached ?? ""),
+    sheetsSafeCell(row.resumeChars ?? ""),
+    sheetsSafeCell(resumeParsed),
   ];
 }
 
@@ -202,7 +214,7 @@ async function appendRowInternal(row) {
 
   const auth = await getSheetsAuth();
   const sheets = google.sheets({ version: "v4", auth });
-  const range = `${tab}!A:R`;
+  const range = `${tab}!A:U`;
 
   await sheets.spreadsheets.values.append({
     spreadsheetId,

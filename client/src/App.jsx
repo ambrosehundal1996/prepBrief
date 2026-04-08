@@ -1,6 +1,12 @@
-import { useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import {
+  MAX_SAVED_BRIEFS,
+  deleteBriefFromHistory,
+  loadBriefHistory,
+  saveBriefToHistory,
+} from './briefHistory'
 import './App.css'
 
 function isValidHttpUrl(value) {
@@ -80,6 +86,23 @@ function formatResponseTime(ms) {
   return `${m}m ${s}s`
 }
 
+function formatSavedAt(iso) {
+  if (!iso || typeof iso !== 'string') return ''
+  try {
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return iso
+    return d.toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    })
+  } catch {
+    return iso
+  }
+}
+
 /** Split brief markdown into chunks at top-level ## headings (one card per section). */
 function splitBriefIntoSections(md) {
   if (typeof md !== 'string' || !md.trim()) return []
@@ -87,8 +110,39 @@ function splitBriefIntoSections(md) {
   return parts.map((p) => p.trim()).filter(Boolean)
 }
 
+function getSectionTitle(sectionMarkdown) {
+  if (typeof sectionMarkdown !== 'string') return 'Section'
+  const match = sectionMarkdown.match(/^##\s+(.+)$/m)
+  return match?.[1]?.trim() || 'Section'
+}
+
+function sectionSlug(label) {
+  return label
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+}
+
+const RESUME_ACCEPT = '.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
+function isAllowedResumeFile(file) {
+  if (!file || typeof file.name !== 'string') return false
+  const lower = file.name.toLowerCase()
+  if (lower.endsWith('.pdf') || lower.endsWith('.docx')) return true
+  const t = (file.type || '').toLowerCase()
+  return (
+    t === 'application/pdf' ||
+    t ===
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  )
+}
+
 export default function App() {
   const [jobUrl, setJobUrl] = useState('')
+  const [resumeFile, setResumeFile] = useState(null)
+  const [resumeDragActive, setResumeDragActive] = useState(false)
   const [loading, setLoading] = useState(false)
   const [clientError, setClientError] = useState('')
   const [apiError, setApiError] = useState('')
@@ -97,8 +151,52 @@ export default function App() {
   const [freeUsesConsumed, setFreeUsesConsumed] = useState(() =>
     isTrialCapped ? readFreeUsesConsumed() : 0,
   )
+  const [savedBriefs, setSavedBriefs] = useState(() => loadBriefHistory())
+  const [activeSavedId, setActiveSavedId] = useState(null)
   const outputRef = useRef(null)
   const scrollOnStreamRef = useRef(false)
+  const streamMdRef = useRef('')
+  const resumeInputRef = useRef(null)
+
+  const setResumeFromFileList = useCallback((fileList) => {
+    const file = fileList?.[0]
+    if (!file) return
+    if (!isAllowedResumeFile(file)) {
+      setClientError('Please upload a PDF or .docx resume.')
+      return
+    }
+    setClientError('')
+    setResumeFile(file)
+  }, [])
+
+  const clearResume = useCallback(() => {
+    setResumeFile(null)
+    if (resumeInputRef.current) resumeInputRef.current.value = ''
+  }, [])
+
+  const openSavedBrief = useCallback((entry) => {
+    setMarkdown(entry.markdown)
+    setResponseTimeMs(null)
+    setJobUrl(entry.jobUrl)
+    setActiveSavedId(entry.id)
+    setApiError('')
+    setClientError('')
+    requestAnimationFrame(() => {
+      outputRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      })
+    })
+  }, [])
+
+  const handleDeleteSaved = useCallback((id) => {
+    const next = deleteBriefFromHistory(id)
+    setSavedBriefs(next)
+    if (activeSavedId === id) {
+      setActiveSavedId(null)
+      setMarkdown(null)
+    }
+  }, [activeSavedId])
 
   const freeUsesRemaining = isTrialCapped
     ? Math.max(0, FREE_BRIEF_LIMIT - freeUsesConsumed)
@@ -133,24 +231,30 @@ export default function App() {
 
     setLoading(true)
     setMarkdown('')
+    streamMdRef.current = ''
     setResponseTimeMs(null)
     scrollOnStreamRef.current = false
+    setActiveSavedId(null)
 
     const endpoint = apiUrl('/api/research/stream')
     const t0 = performance.now()
+    const formData = new FormData()
+    formData.append('jobUrl', trimmedJob)
+    if (resumeFile) formData.append('resume', resumeFile)
+
     console.log('[prepbrief] Generate Brief: streaming POST', {
       endpoint,
       jobUrl: trimmedJob,
+      hasResume: Boolean(resumeFile),
     })
 
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
           Accept: 'text/event-stream',
         },
-        body: JSON.stringify({ jobUrl: trimmedJob }),
+        body: formData,
       })
 
       if (!res.ok) {
@@ -203,6 +307,7 @@ export default function App() {
             if (payload.type === 'text' && payload.text) {
               setMarkdown((prev) => {
                 const next = (prev || '') + payload.text
+                streamMdRef.current = next
                 return next
               })
               if (!scrollOnStreamRef.current) {
@@ -246,6 +351,15 @@ export default function App() {
         setApiError(streamError)
       } else if (!sawDone) {
         setApiError('Stream ended before the brief was complete. Try again.')
+      } else {
+        const finalMd = streamMdRef.current.trim()
+        if (finalMd) {
+          const { items } = saveBriefToHistory({
+            jobUrl: trimmedJob,
+            markdown: finalMd,
+          })
+          setSavedBriefs(items)
+        }
       }
     } catch (err) {
       console.error('[prepbrief] fetch failed', err)
@@ -260,6 +374,14 @@ export default function App() {
 
   const briefSections =
     markdown !== null ? splitBriefIntoSections(markdown) : []
+  const sectionNavItems = briefSections.map((chunk, i) => {
+    const title = getSectionTitle(chunk)
+    const slug = sectionSlug(title) || `section-${i + 1}`
+    return {
+      id: `brief-section-${slug}-${i + 1}`,
+      title,
+    }
+  })
 
   const markdownComponents = {
     table: ({ children, ...props }) => (
@@ -270,17 +392,71 @@ export default function App() {
   }
 
   return (
-    <div className="app">
-      <header className="site-header">
-        <h1>PrepBrief</h1>
-        <p className="tagline">
-          Paste a job posting link — we identify the company and prep you for the
-          interview.
-        </p>
+    <div className="layout">
+      <header className="site-header-bar">
+        <div className="topbar">
+          <div className="topbar-inner">
+            <a href="#top" className="topbar-brand">
+              PrepBrief
+            </a>
+            {isTrialCapped && (
+              <span
+                className={
+                  trialExhausted
+                    ? 'topbar-pill topbar-pill--exhausted'
+                    : 'topbar-pill'
+                }
+                aria-live="polite"
+              >
+                {trialExhausted
+                  ? 'No free briefs left'
+                  : `${freeUsesRemaining} free brief${freeUsesRemaining === 1 ? '' : 's'} left`}
+              </span>
+            )}
+            {!isTrialCapped && (
+              <span className="topbar-pill topbar-pill--dev">Dev · unlimited</span>
+            )}
+          </div>
+        </div>
+        <nav className="navbar" aria-label="Main navigation">
+          <div className="navbar-inner">
+            <a href="#create-brief" className="navbar-link">
+              Create brief
+            </a>
+            {markdown !== null && (
+              <a href="#your-brief" className="navbar-link">
+                Your brief
+              </a>
+            )}
+            <a href="#top" className="navbar-link navbar-link--muted">
+              Overview
+            </a>
+            <a href="#saved-briefs" className="navbar-link navbar-link--muted">
+              Saved briefs
+              {savedBriefs.length > 0 && (
+                <span className="navbar-count">{savedBriefs.length}</span>
+              )}
+            </a>
+          </div>
+        </nav>
       </header>
 
-      <main>
-        <form className="card" onSubmit={handleSubmit} noValidate>
+      <div className="app">
+        <header className="site-header" id="top">
+          <h1 className="site-title">Interview-ready company briefs</h1>
+          <p className="tagline">
+            Paste a job posting link — we identify the company and prep you for
+            the interview. Add your resume for tailored talking points.
+          </p>
+        </header>
+
+        <main>
+        <form
+          id="create-brief"
+          className="card"
+          onSubmit={handleSubmit}
+          noValidate
+        >
           <div className="field">
             <label htmlFor="jobUrl">Job posting URL</label>
             <input
@@ -315,6 +491,88 @@ export default function App() {
                 </>
               )}
             </p>
+          </div>
+
+          <div className="field">
+            <span className="field-label" id="resume-label">
+              Resume <span className="field-optional">(optional)</span>
+            </span>
+            <input
+              ref={resumeInputRef}
+              id="resumeFile"
+              name="resume"
+              type="file"
+              accept={RESUME_ACCEPT}
+              className="resume-file-input"
+              disabled={loading || trialExhausted}
+              aria-labelledby="resume-label"
+              onChange={(ev) =>
+                setResumeFromFileList(ev.target.files)
+              }
+            />
+            <button
+              type="button"
+              className="resume-dropzone"
+              disabled={loading || trialExhausted}
+              aria-labelledby="resume-label"
+              data-active={resumeDragActive ? 'true' : undefined}
+              onClick={() => resumeInputRef.current?.click()}
+              onKeyDown={(ev) => {
+                if (ev.key === 'Enter' || ev.key === ' ') {
+                  ev.preventDefault()
+                  resumeInputRef.current?.click()
+                }
+              }}
+              onDragEnter={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setResumeDragActive(true)
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setResumeDragActive(false)
+              }}
+              onDragOver={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setResumeDragActive(false)
+                setResumeFromFileList(e.dataTransfer.files)
+              }}
+            >
+              {resumeFile ? (
+                <span className="resume-dropzone__main">
+                  <strong>{resumeFile.name}</strong>
+                  <span className="resume-dropzone__sub">
+                    Click to replace, or drop a new file
+                  </span>
+                </span>
+              ) : (
+                <span className="resume-dropzone__main">
+                  Drop your resume here or click to browse
+                  <span className="resume-dropzone__sub">
+                    PDF or .docx — used to tailor talking points to your
+                    background
+                  </span>
+                </span>
+              )}
+            </button>
+            {resumeFile && (
+              <div className="resume-actions">
+                <button
+                  type="button"
+                  className="btn-text"
+                  disabled={loading || trialExhausted}
+                  onClick={clearResume}
+                >
+                  Remove file
+                </button>
+              </div>
+            )}
           </div>
 
           {trialExhausted && (
@@ -358,12 +616,94 @@ export default function App() {
           )}
         </form>
 
+        <section
+          id="saved-briefs"
+          className="card saved-briefs-card"
+          aria-labelledby="saved-briefs-heading"
+        >
+          <h2 id="saved-briefs-heading" className="saved-briefs-title">
+            Saved briefs
+          </h2>
+          <p className="saved-briefs-hint">
+            Stored only in this browser (localStorage). Up to {MAX_SAVED_BRIEFS}{' '}
+            briefs; oldest are removed if you hit the limit.
+          </p>
+          {savedBriefs.length === 0 ? (
+            <p className="saved-briefs-empty">
+              No saved briefs yet. Generate one above — it will appear here
+              automatically.
+            </p>
+          ) : (
+            <ul className="saved-briefs-list">
+              {savedBriefs.map((entry) => (
+                <li key={entry.id} className="saved-briefs-item">
+                  <div className="saved-briefs-item-main">
+                    <span className="saved-briefs-company">{entry.companyName}</span>
+                    <span className="saved-briefs-meta">
+                      {formatSavedAt(entry.savedAt)}
+                      {entry.jobUrl ? (
+                        <>
+                          {' · '}
+                          <span className="saved-briefs-host" title={entry.jobUrl}>
+                            {(() => {
+                              try {
+                                return new URL(entry.jobUrl).hostname.replace(
+                                  /^www\./,
+                                  '',
+                                )
+                              } catch {
+                                return 'Job link'
+                              }
+                            })()}
+                          </span>
+                        </>
+                      ) : null}
+                    </span>
+                  </div>
+                  <div className="saved-briefs-actions">
+                    <button
+                      type="button"
+                      className="saved-briefs-btn"
+                      onClick={() => openSavedBrief(entry)}
+                    >
+                      Open
+                    </button>
+                    <button
+                      type="button"
+                      className="saved-briefs-btn saved-briefs-btn--danger"
+                      onClick={() => handleDeleteSaved(entry.id)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
         {markdown !== null && (
           <section
+            id="your-brief"
             className="output-section"
             ref={outputRef}
             aria-label="Research brief"
           >
+            {activeSavedId && (
+              <div className="history-banner" role="status">
+                <span>Viewing a saved brief from this browser.</span>
+                <button
+                  type="button"
+                  className="history-banner-dismiss"
+                  onClick={() => {
+                    setActiveSavedId(null)
+                    setMarkdown(null)
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            )}
             <div className="output-header">
               <h2>Your brief</h2>
               {responseTimeMs != null && (
@@ -372,6 +712,15 @@ export default function App() {
                 </p>
               )}
             </div>
+            {sectionNavItems.length > 0 && (
+              <nav className="section-jump-nav" aria-label="Jump to brief section">
+                {sectionNavItems.map((item) => (
+                  <a key={item.id} className="section-jump-link" href={`#${item.id}`}>
+                    {item.title}
+                  </a>
+                ))}
+              </nav>
+            )}
             <div className="brief-stack">
               {briefSections.length === 0 ? (
                 <article className="brief-section brief-section--pending">
@@ -379,7 +728,7 @@ export default function App() {
                 </article>
               ) : (
                 briefSections.map((chunk, i) => (
-                  <article key={i} className="brief-section">
+                  <article key={i} id={sectionNavItems[i].id} className="brief-section">
                     <div className="markdown-output">
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
@@ -394,9 +743,46 @@ export default function App() {
             </div>
           </section>
         )}
-      </main>
+        </main>
+      </div>
 
-      <footer className="site-footer">Powered by Claude</footer>
+      <footer className="site-footer" role="contentinfo">
+        <div className="site-footer-inner">
+          <div className="site-footer-top">
+            <div className="site-footer-brand-block">
+              <span className="site-footer-brand">PrepBrief</span>
+              <p className="site-footer-blurb">
+                Company research and talking points tailored to each role.
+              </p>
+            </div>
+            <nav className="site-footer-nav" aria-label="Footer">
+              <a href="#create-brief" className="site-footer-link">
+                Create brief
+              </a>
+              {markdown !== null && (
+                <a href="#your-brief" className="site-footer-link">
+                  Your brief
+                </a>
+              )}
+              <a href="#top" className="site-footer-link">
+                Overview
+              </a>
+              <a href="#saved-briefs" className="site-footer-link">
+                Saved briefs
+              </a>
+            </nav>
+          </div>
+          <div className="site-footer-bottom">
+            <span>
+              © {new Date().getFullYear()} PrepBrief. All rights reserved.
+            </span>
+            <span className="site-footer-sep" aria-hidden="true">
+              ·
+            </span>
+            <span>Powered by Claude</span>
+          </div>
+        </div>
+      </footer>
     </div>
   )
 }

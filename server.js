@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const multer = require("multer");
 const {
   AuthenticationError,
   RateLimitError,
@@ -13,6 +14,7 @@ const {
   isSheetsConfigured,
   tokenFieldsForSheet,
 } = require("./googleSheetsLogger");
+const { extractResumeText, MAX_FILE_BYTES } = require("./resumeExtract");
 
 const MAX_JOB_DESCRIPTION_CHARS = 80_000;
 
@@ -95,6 +97,69 @@ function sseLine(obj) {
   return `data: ${JSON.stringify(obj)}\n\n`;
 }
 
+const resumeUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_FILE_BYTES },
+}).fields([{ name: "resume", maxCount: 1 }]);
+
+function withResumeUpload(req, res, next) {
+  resumeUpload(req, res, (err) => {
+    if (!err) return next();
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({
+        error: `Resume file is too large (max ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB).`,
+      });
+    }
+    return res.status(400).json({
+      error: err.message || "Resume upload failed.",
+    });
+  });
+}
+
+/**
+ * Parse JSON or multipart body (job fields + optional resume file).
+ * @returns {Promise<{ error: string } | { job: object, companyUrlOpt?: string, resumeText: string | null, resumeMeta: { attached: boolean, chars: number, truncated: boolean } }>}
+ */
+async function parseResearchPayload(req) {
+  const job = normalizeJobInputs(req.body);
+  if (job.error) return { error: job.error };
+  const companyUrlOpt = optionalCompanyUrl(req.body);
+  const file = req.files?.resume?.[0];
+  const resumeMeta = { attached: false, chars: 0, truncated: false };
+  if (file) {
+    const result = await extractResumeText(
+      file.buffer,
+      file.mimetype,
+      file.originalname,
+    );
+    if (!result.ok) return { error: result.error };
+    resumeMeta.attached = true;
+    resumeMeta.chars = result.text.length;
+    resumeMeta.truncated = Boolean(result.truncated);
+    console.log("[api] resume extracted for request", {
+      chars: result.text.length,
+      llmTruncated: resumeMeta.truncated,
+    });
+    return {
+      job,
+      companyUrlOpt,
+      resumeText: result.text,
+      resumeMeta,
+    };
+  }
+  return { job, companyUrlOpt, resumeText: null, resumeMeta };
+}
+
+function sheetResumeFields(meta, resumeText) {
+  const text =
+    meta?.attached && typeof resumeText === "string" ? resumeText : "";
+  return {
+    resumeAttached: meta?.attached ? "yes" : "no",
+    resumeChars: meta?.attached ? meta.chars : "",
+    resumeParsedText: text,
+  };
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -156,21 +221,22 @@ app.post("/api/log-client-event", (req, res) => {
     responseTruncated: false,
     responseMarkdown: "",
     ...tokenFieldsForSheet(undefined),
+    ...sheetResumeFields({ attached: false }, null),
   });
 
   res.json({ ok: true, logged: isSheetsConfigured() });
 });
 
-app.post("/api/research", async (req, res) => {
+app.post("/api/research", withResumeUpload, async (req, res) => {
   const reqId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-  const job = normalizeJobInputs(req.body);
-  if (job.error) {
-    console.log(`[api:${reqId}] POST /api/research rejected: ${job.error}`);
-    return res.status(400).json({ error: job.error });
+  const parsed = await parseResearchPayload(req);
+  if (parsed.error) {
+    console.log(`[api:${reqId}] POST /api/research rejected: ${parsed.error}`);
+    return res.status(400).json({ error: parsed.error });
   }
 
-  const companyUrlOpt = optionalCompanyUrl(req.body);
+  const { job, companyUrlOpt, resumeText, resumeMeta } = parsed;
   const companyHost = requestLogHost({
     companyUrl: companyUrlOpt,
     jobUrl: job.jobUrl,
@@ -181,6 +247,7 @@ app.post("/api/research", async (req, res) => {
     hasOptionalCompanyUrl: Boolean(companyUrlOpt),
     hasJobUrl: Boolean(job.jobUrl),
     hasJobDescriptionText: Boolean(job.jobDescriptionText),
+    resumeAttached: resumeMeta.attached,
   });
 
   const t0 = Date.now();
@@ -198,6 +265,7 @@ app.post("/api/research", async (req, res) => {
     responseTruncated: false,
     responseMarkdown: "",
     ...tokenFieldsForSheet(undefined),
+    ...sheetResumeFields(resumeMeta, resumeText),
   });
 
   try {
@@ -205,6 +273,7 @@ app.post("/api/research", async (req, res) => {
       companyUrl: companyUrlOpt,
       jobUrl: job.jobUrl,
       jobDescriptionText: job.jobDescriptionText,
+      resumeText,
     });
     const elapsedMs = Date.now() - t0;
     console.log(`[api:${reqId}] success`, {
@@ -226,6 +295,7 @@ app.post("/api/research", async (req, res) => {
       responseTruncated: false,
       responseMarkdown: markdown,
       ...tokenFieldsForSheet(tokenUsage),
+      ...sheetResumeFields(resumeMeta, resumeText),
     });
     res.json({ markdown });
   } catch (err) {
@@ -251,6 +321,7 @@ app.post("/api/research", async (req, res) => {
       responseTruncated: false,
       responseMarkdown: "",
       ...tokenFieldsForSheet(undefined),
+      ...sheetResumeFields(resumeMeta, resumeText),
     });
     if (err.code === "MISSING_API_KEY") {
       return res.status(503).json({
@@ -297,18 +368,18 @@ app.post("/api/research", async (req, res) => {
   }
 });
 
-app.post("/api/research/stream", async (req, res) => {
+app.post("/api/research/stream", withResumeUpload, async (req, res) => {
   const reqId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-  const job = normalizeJobInputs(req.body);
-  if (job.error) {
+  const parsed = await parseResearchPayload(req);
+  if (parsed.error) {
     console.log(
-      `[api:${reqId}] POST /api/research/stream rejected: ${job.error}`,
+      `[api:${reqId}] POST /api/research/stream rejected: ${parsed.error}`,
     );
-    return res.status(400).json({ error: job.error });
+    return res.status(400).json({ error: parsed.error });
   }
 
-  const companyUrlOpt = optionalCompanyUrl(req.body);
+  const { job, companyUrlOpt, resumeText, resumeMeta } = parsed;
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key || key === "your_key_here") {
     return res.status(503).json({
@@ -327,6 +398,7 @@ app.post("/api/research/stream", async (req, res) => {
     hasOptionalCompanyUrl: Boolean(companyUrlOpt),
     hasJobUrl: Boolean(job.jobUrl),
     hasJobDescriptionText: Boolean(job.jobDescriptionText),
+    resumeAttached: resumeMeta.attached,
   });
 
   res.status(200);
@@ -350,6 +422,7 @@ app.post("/api/research/stream", async (req, res) => {
     responseTruncated: false,
     responseMarkdown: "",
     ...tokenFieldsForSheet(undefined),
+    ...sheetResumeFields(resumeMeta, resumeText),
   });
 
   try {
@@ -357,6 +430,7 @@ app.post("/api/research/stream", async (req, res) => {
       companyUrl: companyUrlOpt,
       jobUrl: job.jobUrl,
       jobDescriptionText: job.jobDescriptionText,
+      resumeText,
     });
     const elapsedMs = Date.now() - t0;
     console.log(`[api:${reqId}] stream finished in ${elapsedMs}ms`, {
@@ -378,6 +452,7 @@ app.post("/api/research/stream", async (req, res) => {
         responseTruncated: false,
         responseMarkdown: streamResult.markdown || "",
         ...tokenFieldsForSheet(streamResult.tokenUsage),
+        ...sheetResumeFields(resumeMeta, resumeText),
       });
     } else if (streamResult) {
       logFromRequest(req, {
@@ -394,6 +469,7 @@ app.post("/api/research/stream", async (req, res) => {
         responseTruncated: false,
         responseMarkdown: "",
         ...tokenFieldsForSheet(streamResult.tokenUsage),
+        ...sheetResumeFields(resumeMeta, resumeText),
       });
     } else {
       logFromRequest(req, {
@@ -410,6 +486,7 @@ app.post("/api/research/stream", async (req, res) => {
         responseTruncated: false,
         responseMarkdown: "",
         ...tokenFieldsForSheet(undefined),
+        ...sheetResumeFields(resumeMeta, resumeText),
       });
     }
   } catch (err) {
@@ -433,6 +510,7 @@ app.post("/api/research/stream", async (req, res) => {
       responseTruncated: false,
       responseMarkdown: "",
       ...tokenFieldsForSheet(undefined),
+      ...sheetResumeFields(resumeMeta, resumeText),
     });
     if (!res.writableEnded) {
       if (res.headersSent) {

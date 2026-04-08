@@ -11,6 +11,7 @@ const {
 const MODEL = "claude-sonnet-4-20250514";
 const MAX_TOKENS = 4000;
 const MAX_PAUSE_CONTINUATIONS = 10;
+const LOG_PREVIEW_CHARS = 2500;
 
 const WEB_SEARCH_TOOLS = [
   {
@@ -88,6 +89,33 @@ Output only the markdown brief (no preamble). Follow the exact section headers a
 }
 
 /**
+ * Append extracted resume text to the user message when present.
+ * @param {string} userContent
+ * @param {string | null | undefined} resumeText
+ */
+function appendResumeToPrompt(userContent, resumeText) {
+  const base =
+    typeof userContent === "string" ? userContent.trimEnd() : "";
+  const r =
+    typeof resumeText === "string" ? resumeText.trim() : "";
+  if (!r) return base;
+  return `${base}
+
+The user also provided their **resume** as extracted text below. Cross-reference it with the job description or posting for JD-specific sections. Use only facts stated in the resume; do not invent employers, titles, dates, or metrics.
+
+--- Candidate resume (extracted text) ---
+${r}
+--- End resume ---`;
+}
+
+function compactPreview(text, max = LOG_PREVIEW_CHARS) {
+  if (typeof text !== "string" || !text.trim()) return "";
+  const compact = text.replace(/\s+/g, " ").trim();
+  if (compact.length <= max) return compact;
+  return `${compact.slice(0, max)} …[truncated ${compact.length - max} chars]`;
+}
+
+/**
  * User message when the job posting body was scraped (Firecrawl) — model must not use web search.
  */
 function buildUserMessageSingleSource({
@@ -144,6 +172,10 @@ async function maybeScrapeJobWithFirecrawl({ jobUrl, jobDescriptionText }) {
     markdownChars: fc.markdown.length,
     truncated: Boolean(fc.truncated),
   });
+  console.log(
+    "[research] Firecrawl markdown preview:",
+    compactPreview(fc.markdown),
+  );
   return { markdown: fc.markdown, error: null };
 }
 
@@ -263,15 +295,19 @@ function logMessageStep(label, response) {
  * @param {string} [opts.companyUrl] optional hint when user supplies it
  * @param {string} [opts.jobUrl]
  * @param {string} [opts.jobDescriptionText]
+ * @param {string | null} [opts.resumeText] optional extracted resume plain text
  * @returns {Promise<{ markdown: string, tokenUsage: ReturnType<emptyTokenUsageTotals> }>}
  */
 async function generateBrief({
   companyUrl,
   jobUrl,
   jobDescriptionText,
+  resumeText = null,
 }) {
   const t0 = Date.now();
   const companyHost = logPrimaryHost({ companyUrl, jobUrl });
+  const hasResume =
+    typeof resumeText === "string" && resumeText.trim().length > 0;
 
   console.log("[research] generateBrief start", {
     companyHost,
@@ -282,6 +318,8 @@ async function generateBrief({
     hasJobDescriptionText: Boolean(
       typeof jobDescriptionText === "string" && jobDescriptionText.trim(),
     ),
+    hasResume,
+    resumeChars: hasResume ? resumeText.trim().length : 0,
     firecrawlConfigured: isFirecrawlConfigured(),
     model: MODEL,
     max_tokens: MAX_TOKENS,
@@ -302,7 +340,7 @@ async function generateBrief({
     jobDescriptionText,
   });
   const useSingleSource = Boolean(firecrawlMarkdown);
-  const userContent = useSingleSource
+  let userContent = useSingleSource
     ? buildUserMessageSingleSource({
         companyUrl,
         jobUrl,
@@ -313,12 +351,20 @@ async function generateBrief({
         jobUrl,
         jobDescriptionText,
       });
+  userContent = appendResumeToPrompt(userContent, resumeText);
+
+  console.log("[research] prompt mode", {
+    mode: useSingleSource ? "single_source_firecrawl" : "web_search",
+    userContentChars: userContent.length,
+  });
+  console.log("[research] user prompt preview:", compactPreview(userContent));
 
   const baseParams = {
     model: MODEL,
     max_tokens: MAX_TOKENS,
-    system: RESEARCH_SYSTEM_PROMPT_SINGLE_SOURCE,
-     
+    system: useSingleSource
+      ? RESEARCH_SYSTEM_PROMPT_SINGLE_SOURCE
+      : RESEARCH_SYSTEM_PROMPT,
     ...(useSingleSource ? {} : { tools: WEB_SEARCH_TOOLS }),
   };
 
@@ -397,16 +443,19 @@ function cloneMessagesForApi(messages) {
  *
  * @param {import('express').Request} req
  * @param {import('express').Response} res
- * @param {{ companyUrl?: string, jobUrl?: string, jobDescriptionText?: string }} opts
+ * @param {{ companyUrl?: string, jobUrl?: string, jobDescriptionText?: string, resumeText?: string | null }} opts
  * @returns {Promise<{ ok: boolean, markdown?: string, errorCode?: string, errorMessage?: string, elapsedMs?: number, tokenUsage?: ReturnType<emptyTokenUsageTotals> }>}
  */
 async function streamResearchBrief(req, res, {
   companyUrl,
   jobUrl,
   jobDescriptionText,
+  resumeText = null,
 }) {
   const t0 = Date.now();
   const companyHost = logPrimaryHost({ companyUrl, jobUrl });
+  const hasResume =
+    typeof resumeText === "string" && resumeText.trim().length > 0;
 
   console.log("[research] streamResearchBrief start", {
     companyHost,
@@ -417,6 +466,8 @@ async function streamResearchBrief(req, res, {
     hasJobDescriptionText: Boolean(
       typeof jobDescriptionText === "string" && jobDescriptionText.trim(),
     ),
+    hasResume,
+    resumeChars: hasResume ? resumeText.trim().length : 0,
     firecrawlConfigured: isFirecrawlConfigured(),
     model: MODEL,
     max_tokens: MAX_TOKENS,
@@ -437,7 +488,7 @@ async function streamResearchBrief(req, res, {
     jobDescriptionText,
   });
   const useSingleSource = Boolean(firecrawlMarkdown);
-  const userContent = useSingleSource
+  let userContent = useSingleSource
     ? buildUserMessageSingleSource({
         companyUrl,
         jobUrl,
@@ -448,6 +499,16 @@ async function streamResearchBrief(req, res, {
         jobUrl,
         jobDescriptionText,
       });
+  userContent = appendResumeToPrompt(userContent, resumeText);
+
+  console.log("[research] stream prompt mode", {
+    mode: useSingleSource ? "single_source_firecrawl" : "web_search",
+    userContentChars: userContent.length,
+  });
+  console.log(
+    "[research] stream user prompt preview:",
+    compactPreview(userContent),
+  );
 
   const baseParams = {
     model: MODEL,
