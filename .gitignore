@@ -1,0 +1,5 @@
+node_modules/
+.env
+
+# Service account JSON (never commit)
+client/secrets/

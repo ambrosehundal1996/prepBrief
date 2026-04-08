@@ -1,0 +1,26 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100svh;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #221527;
+  background:
+    radial-gradient(ellipse 120% 80% at 50% -20%, rgba(139, 92, 246, 0.14), transparent),
+    radial-gradient(ellipse 80% 50% at 100% 50%, rgba(167, 139, 250, 0.1), transparent),
+    linear-gradient(165deg, #f3ecfc 0%, #efe7f8 35%, #faf7ff 70%, #f0e8f6 100%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
