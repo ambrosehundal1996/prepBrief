@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -127,6 +127,64 @@ function sectionSlug(label) {
 
 const RESUME_ACCEPT = '.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 
+function TopNav({
+  markdown,
+  savedBriefs,
+  savedBriefsPanelOpen,
+  onLeaveSavedView,
+  onToggleSavedBriefs,
+}) {
+  return (
+    <header className="top-nav">
+      <div className="top-nav-inner">
+        <a
+          href="#top"
+          className="top-nav-brand"
+          onClick={onLeaveSavedView}
+        >
+          PrepBrief
+        </a>
+        <nav className="top-nav-links" aria-label="Primary navigation">
+          <a
+            href="#create-brief"
+            className="top-nav-link"
+            onClick={onLeaveSavedView}
+          >
+            Create brief
+          </a>
+          {markdown !== null && (
+            <a href="#your-brief" className="top-nav-link">
+              Your brief
+            </a>
+          )}
+          <a
+            href="#top"
+            className="top-nav-link top-nav-link--muted"
+            onClick={onLeaveSavedView}
+          >
+            Overview
+          </a>
+          <button
+            type="button"
+            className={
+              savedBriefsPanelOpen
+                ? 'top-nav-link top-nav-link--muted top-nav-link--active'
+                : 'top-nav-link top-nav-link--muted'
+            }
+            aria-expanded={savedBriefsPanelOpen}
+            onClick={onToggleSavedBriefs}
+          >
+            Saved briefs
+            {savedBriefs.length > 0 && (
+              <span className="top-nav-count">{savedBriefs.length}</span>
+            )}
+          </button>
+        </nav>
+      </div>
+    </header>
+  )
+}
+
 function isAllowedResumeFile(file) {
   if (!file || typeof file.name !== 'string') return false
   const lower = file.name.toLowerCase()
@@ -152,8 +210,10 @@ export default function App() {
     isTrialCapped ? readFreeUsesConsumed() : 0,
   )
   const [savedBriefs, setSavedBriefs] = useState(() => loadBriefHistory())
+  const [savedBriefsPanelOpen, setSavedBriefsPanelOpen] = useState(false)
   const [activeSavedId, setActiveSavedId] = useState(null)
   const outputRef = useRef(null)
+  const savedBriefsSectionRef = useRef(null)
   const scrollOnStreamRef = useRef(false)
   const streamMdRef = useRef('')
   const resumeInputRef = useRef(null)
@@ -175,6 +235,7 @@ export default function App() {
   }, [])
 
   const openSavedBrief = useCallback((entry) => {
+    setSavedBriefsPanelOpen(false)
     setMarkdown(entry.markdown)
     setResponseTimeMs(null)
     setJobUrl(entry.jobUrl)
@@ -197,6 +258,25 @@ export default function App() {
       setMarkdown(null)
     }
   }, [activeSavedId])
+
+  const openSavedBriefsPanel = useCallback(() => {
+    setSavedBriefsPanelOpen(true)
+  }, [])
+
+  const toggleSavedBriefsPanel = useCallback(() => {
+    setSavedBriefsPanelOpen((prev) => !prev)
+  }, [])
+
+  useEffect(() => {
+    if (!savedBriefsPanelOpen) return
+    const id = window.setTimeout(() => {
+      savedBriefsSectionRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      })
+    }, 50)
+    return () => clearTimeout(id)
+  }, [savedBriefsPanelOpen])
 
   const freeUsesRemaining = isTrialCapped
     ? Math.max(0, FREE_BRIEF_LIMIT - freeUsesConsumed)
@@ -393,64 +473,88 @@ export default function App() {
 
   return (
     <div className="layout">
-      <header className="site-header-bar">
-        <div className="topbar">
-          <div className="topbar-inner">
-            <a href="#top" className="topbar-brand">
-              PrepBrief
-            </a>
-            {isTrialCapped && (
-              <span
-                className={
-                  trialExhausted
-                    ? 'topbar-pill topbar-pill--exhausted'
-                    : 'topbar-pill'
-                }
-                aria-live="polite"
-              >
-                {trialExhausted
-                  ? 'No free briefs left'
-                  : `${freeUsesRemaining} free brief${freeUsesRemaining === 1 ? '' : 's'} left`}
-              </span>
-            )}
-            {!isTrialCapped && (
-              <span className="topbar-pill topbar-pill--dev">Dev · unlimited</span>
-            )}
-          </div>
-        </div>
-        <nav className="navbar" aria-label="Main navigation">
-          <div className="navbar-inner">
-            <a href="#create-brief" className="navbar-link">
+      <div className="layout-shell">
+        <aside className="sidebar" aria-label="Site">
+          <a href="#top" className="sidebar-brand">
+            PrepBrief
+          </a>
+          {isTrialCapped && (
+            <span
+              className={
+                trialExhausted
+                  ? 'sidebar-pill sidebar-pill--exhausted'
+                  : 'sidebar-pill'
+              }
+              aria-live="polite"
+            >
+              {trialExhausted
+                ? 'No free briefs left'
+                : `${freeUsesRemaining} free brief${freeUsesRemaining === 1 ? '' : 's'} left`}
+            </span>
+          )}
+          {!isTrialCapped && (
+            <span className="sidebar-pill sidebar-pill--dev">Dev · unlimited</span>
+          )}
+          <p className="sidebar-nav-label">Navigate</p>
+          <nav className="sidebar-nav" aria-label="Main navigation">
+            <a
+              href="#create-brief"
+              className="sidebar-link"
+              onClick={() => setSavedBriefsPanelOpen(false)}
+            >
               Create brief
             </a>
             {markdown !== null && (
-              <a href="#your-brief" className="navbar-link">
+              <a href="#your-brief" className="sidebar-link">
                 Your brief
               </a>
             )}
-            <a href="#top" className="navbar-link navbar-link--muted">
+            <a
+              href="#top"
+              className="sidebar-link sidebar-link--muted"
+              onClick={() => setSavedBriefsPanelOpen(false)}
+            >
               Overview
             </a>
-            <a href="#saved-briefs" className="navbar-link navbar-link--muted">
+            <button
+              type="button"
+              className={
+                savedBriefsPanelOpen
+                  ? 'sidebar-link sidebar-link--muted sidebar-link--active'
+                  : 'sidebar-link sidebar-link--muted'
+              }
+              aria-expanded={savedBriefsPanelOpen}
+              onClick={toggleSavedBriefsPanel}
+            >
               Saved briefs
               {savedBriefs.length > 0 && (
-                <span className="navbar-count">{savedBriefs.length}</span>
+                <span className="sidebar-count">{savedBriefs.length}</span>
               )}
-            </a>
-          </div>
-        </nav>
-      </header>
+            </button>
+          </nav>
+        </aside>
 
-      <div className="app">
-        <header className="site-header" id="top">
-          <h1 className="site-title">Interview-ready company briefs</h1>
-          <p className="tagline">
-            Paste a job posting link — we identify the company and prep you for
-            the interview. Add your resume for tailored talking points.
-          </p>
-        </header>
+        <div className="layout-main">
+          <TopNav
+            markdown={markdown}
+            savedBriefs={savedBriefs}
+            savedBriefsPanelOpen={savedBriefsPanelOpen}
+            onLeaveSavedView={() => setSavedBriefsPanelOpen(false)}
+            onToggleSavedBriefs={toggleSavedBriefsPanel}
+          />
+          <div className="app">
+        {!savedBriefsPanelOpen && (
+          <header className="site-header">
+            <h1 className="site-title">Interview-ready company briefs</h1>
+            <p className="tagline">
+              Paste a job posting link — we identify the company and prep you for
+              the interview. Add your resume for tailored talking points.
+            </p>
+          </header>
+        )}
 
-        <main>
+        <main id="top">
+        {!savedBriefsPanelOpen && (
         <form
           id="create-brief"
           className="card"
@@ -582,12 +686,12 @@ export default function App() {
                 You have used all {FREE_BRIEF_LIMIT} free generations in this
                 browser. We are building paid plans — check back soon or reach
                 out if you want early access.
-              </p>
-            </div>
+          </p>
+        </div>
           )}
 
           <div className="submit-row">
-            <button
+        <button
               type="submit"
               className="btn-primary"
               disabled={loading || trialExhausted}
@@ -615,23 +719,36 @@ export default function App() {
             </p>
           )}
         </form>
+        )}
 
+        {savedBriefsPanelOpen && (
         <section
           id="saved-briefs"
+          ref={savedBriefsSectionRef}
           className="card saved-briefs-card"
           aria-labelledby="saved-briefs-heading"
         >
-          <h2 id="saved-briefs-heading" className="saved-briefs-title">
-            Saved briefs
-          </h2>
+          <div className="saved-briefs-header">
+            <h2 id="saved-briefs-heading" className="saved-briefs-title">
+              Saved briefs
+            </h2>
+            <button
+              type="button"
+              className="saved-briefs-close"
+              onClick={() => setSavedBriefsPanelOpen(false)}
+              aria-label="Close saved briefs"
+            >
+              Close
+            </button>
+          </div>
           <p className="saved-briefs-hint">
             Stored only in this browser (localStorage). Up to {MAX_SAVED_BRIEFS}{' '}
             briefs; oldest are removed if you hit the limit.
           </p>
           {savedBriefs.length === 0 ? (
             <p className="saved-briefs-empty">
-              No saved briefs yet. Generate one above — it will appear here
-              automatically.
+              No saved briefs yet. Choose <strong>Create brief</strong> in the
+              sidebar to generate one — it will appear here automatically.
             </p>
           ) : (
             <ul className="saved-briefs-list">
@@ -681,6 +798,7 @@ export default function App() {
             </ul>
           )}
         </section>
+        )}
 
         {markdown !== null && (
           <section
@@ -744,9 +862,9 @@ export default function App() {
           </section>
         )}
         </main>
-      </div>
+          </div>
 
-      <footer className="site-footer" role="contentinfo">
+          <footer className="site-footer" role="contentinfo">
         <div className="site-footer-inner">
           <div className="site-footer-top">
             <div className="site-footer-brand-block">
@@ -756,7 +874,11 @@ export default function App() {
               </p>
             </div>
             <nav className="site-footer-nav" aria-label="Footer">
-              <a href="#create-brief" className="site-footer-link">
+              <a
+                href="#create-brief"
+                className="site-footer-link"
+                onClick={() => setSavedBriefsPanelOpen(false)}
+              >
                 Create brief
               </a>
               {markdown !== null && (
@@ -767,7 +889,14 @@ export default function App() {
               <a href="#top" className="site-footer-link">
                 Overview
               </a>
-              <a href="#saved-briefs" className="site-footer-link">
+              <a
+                href="#saved-briefs"
+                className="site-footer-link"
+                onClick={(e) => {
+                  e.preventDefault()
+                  openSavedBriefsPanel()
+                }}
+              >
                 Saved briefs
               </a>
             </nav>
@@ -782,7 +911,9 @@ export default function App() {
             <span>Powered by Claude</span>
           </div>
         </div>
-      </footer>
+          </footer>
+        </div>
+      </div>
     </div>
   )
 }
