@@ -1,5 +1,6 @@
 const path = require("path");
-const { PDFParse } = require("pdf-parse");
+/** pdf-parse@1.x: text-only extraction via pdf.js (works on Vercel; v2 pulls in canvas/DOM). */
+const pdfParse = require("pdf-parse");
 const mammoth = require("mammoth");
 
 const MAX_RESUME_CHARS = 45_000;
@@ -58,17 +59,11 @@ async function extractResumeText(buffer, mimetype, originalname) {
   try {
     let raw = "";
     if (isPdf) {
-      /** pdf-parse v2+ exposes `PDFParse` (class), not a default `pdfParse(buffer)` function. */
-      if (typeof PDFParse !== "function") {
-        throw new Error("PDFParse is not available from pdf-parse package.");
+      if (typeof pdfParse !== "function") {
+        throw new Error("pdf-parse is not available.");
       }
-      const parser = new PDFParse({ data: buffer });
-      try {
-        const data = await parser.getText();
-        raw = typeof data.text === "string" ? data.text : "";
-      } finally {
-        await parser.destroy().catch(() => {});
-      }
+      const data = await pdfParse(buffer);
+      raw = typeof data.text === "string" ? data.text : "";
     } else {
       const result = await mammoth.extractRawText({ buffer });
       raw = result.value || "";
