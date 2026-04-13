@@ -223,18 +223,23 @@ SECTION 0: ALWAYS INCLUDE — generated from cross-analysis
 
 ## Brief summary
 
-**Role:** [Role title] at [Company name]
+**[Role title] at [Company name]**
 
-**Your key angle:** [2-3 sentences. What is the core narrative
-this candidate should lead with — grounded in the TOP 3 MATCHES
-from the cross-analysis? What makes their specific background a
-compelling fit for exactly what this company needs right now?
-Be direct and specific. No generic framing.]
+**Lead with these from your background**
+The candidate's 3 most relevant experiences mapped directly to
+this role. These are the specific talking points that will land
+hardest in this interview. Pull from the TOP 3 MATCHES in the
+cross-analysis. Name the specific experience and exactly why
+it resonates for this role — not generic skills.
+- [Specific resume experience] → [why it lands for this role — one line]
+- [Specific resume experience] → [why it lands for this role — one line]
+- [Specific resume experience] → [why it lands for this role — one line]
 
-**Watch out for:** [1 sentence. The single biggest gap identified
-in the cross-analysis — the thing the interviewer is most likely
-to probe on where the candidate is weakest. If no real gap exists,
-write "No significant gaps identified."]
+**Your narrative for this interview**
+2 sentences max. This is the thread that connects their talking
+points into a coherent story. The candidate should be able to
+internalize this and carry it into the room. Direct, specific,
+confident. No generic framing. Grounded in the cross-analysis.
 
 ───────────────────────────────
 SECTION 1: ALWAYS INCLUDE — requires resume + JD for full output,
@@ -242,32 +247,24 @@ falls back to role-based guidance if only JD is provided
 ───────────────────────────────
 
 ## Tell me about yourself
-This is the first question in almost every interview. It sets
-the tone for everything that follows. Build this section from
-three sources simultaneously:
-1. The candidate's actual resume — their real background
-2. The job description — what this role specifically needs
-3. The company's current focus — so the close ties directly
-   to what the company cares about RIGHT NOW
+This is the first question in almost every interview and sets
+the tone for everything that follows. The brief summary already
+gave the candidate their talking points — this section tells
+them how to structure those points into a compelling 60-second
+answer.
+
+Do NOT repeat the talking points from the brief summary here.
+Instead, give the candidate the structure to use them effectively.
 
 **How to frame your answer:**
-- Open with: [specific background from resume to lead with — max 15 words]
-- Middle: [specific skills from resume that map directly to JD — max 15 words]
-- Close with: [tie their background to this company's current focus — max 15 words]
+- Open with: [specific background to lead with — max 15 words]
+- Middle: [how to thread the talking points from the brief summary
+  into a coherent narrative — max 15 words]
+- Close with: [tie to this company's current focus — max 15 words]
 
-- The one sentence to absolutely nail: [single highest leverage
-  moment in this answer based on resume + JD combination]
 - What most candidates get wrong for this role: [one line on
-  the most common mistake for this specific type of position]
-
-**Your ammunition — strongest talking points:**
-Map the candidate's 3 most relevant resume experiences directly
-to what this role needs. These are the specific stories and
-examples to draw from when answering.
-
-- [Specific experience from resume] → [why it lands for this role — one line]
-- [Specific experience from resume] → [why it lands for this role — one line]
-- [Specific experience from resume] → [why it lands for this role — one line]
+  the most common mistake for this specific type of position —
+  so the candidate actively avoids it]
 
 ───────────────────────────────
 SECTION 2: ALWAYS INCLUDE
@@ -361,13 +358,23 @@ Before returning your response, check every bullet against this:
   or more confident?
 - Could it apply to any company? If yes — rewrite it or cut it.
 
+For the brief summary specifically:
+- Do the "Lead with these" bullets come from the TOP 3 MATCHES
+  in the cross-analysis — specific named experiences, not skill types?
+- Does each bullet name a real experience from the resume and explain
+  exactly why it resonates for this specific role in one line?
+- Does "Your narrative" connect the candidate's talking points into
+  a coherent story they can carry into the room — in 2 sentences max?
+- Is the entire summary focused on the candidate and how to present
+  themselves — not on what the job description says?
+- Can a candidate read the entire summary in 15 seconds and know
+  exactly what to lead with?
+
 For "tell me about yourself" specifically:
-- Is the framework built from the actual resume content provided?
+- Does it give structure for using the talking points — not repeat them?
 - Does the close tie directly to this company's current focus?
-- Is the "one sentence to nail" truly the highest leverage moment
-  in this answer for this specific role?
-- Do the strongest talking points reference specific, named
-  experiences from the resume — not generic skill types?
+- Is "what most candidates get wrong" specific to this role type —
+  not generic interview advice?
 
 For the predicted questions specifically:
 - Does each question sound like it came from THIS company's
@@ -384,4 +391,4 @@ interview prepared. Generic advice is worse than no advice
 
 module.exports = {
   RESEARCH_SYSTEM_PROMPT,
-};
+}
