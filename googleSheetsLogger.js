@@ -7,17 +7,44 @@ const MAX_CELL_CHARS = 49_000;
 
 const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
 
-function resolveServiceAccountKeyFilePath() {
+/**
+ * GOOGLE_APPLICATION_CREDENTIALS is normally a path. On Vercel many people paste
+ * the whole service-account JSON there; path.resolve turns that into
+ * /var/task/{...} and breaks auth. Accept inline JSON when it looks like JSON.
+ * @returns {{ kind: 'file', path: string } | { kind: 'inline', credentials: object } | null}
+ */
+function credentialsFromGoogleApplicationEnv() {
   const raw =
     process.env.GOOGLE_APPLICATION_CREDENTIALS ||
     process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE;
   if (!raw || !String(raw).trim()) return null;
-  const resolved = path.resolve(String(raw).trim());
-  if (!fs.existsSync(resolved)) {
-    console.warn("[sheets] service account file not found:", resolved);
+  const s = String(raw).trim();
+  if (s.startsWith("{")) {
+    try {
+      const o = JSON.parse(s);
+      if (
+        o &&
+        typeof o.client_email === "string" &&
+        typeof o.private_key === "string"
+      ) {
+        return { kind: "inline", credentials: o };
+      }
+      console.warn(
+        "[sheets] GOOGLE_APPLICATION_CREDENTIALS looks like JSON but is not a valid service account object (need client_email + private_key).",
+      );
+    } catch {
+      console.warn(
+        "[sheets] GOOGLE_APPLICATION_CREDENTIALS looks like JSON but failed to parse.",
+      );
+    }
     return null;
   }
-  return resolved;
+  const resolved = path.resolve(s);
+  if (fs.existsSync(resolved)) {
+    return { kind: "file", path: resolved };
+  }
+  console.warn("[sheets] service account file not found:", resolved);
+  return null;
 }
 
 /** Full service account JSON as a string (for Vercel / serverless, no file path). */
@@ -42,7 +69,7 @@ function loadServiceAccountCredentialsFromEnv() {
 function isSheetsConfigured() {
   const id = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
   if (!id || !String(id).trim()) return false;
-  if (resolveServiceAccountKeyFilePath()) return true;
+  if (credentialsFromGoogleApplicationEnv()) return true;
   if (loadServiceAccountCredentialsFromEnv()) return true;
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const key = process.env.GOOGLE_PRIVATE_KEY;
@@ -81,10 +108,21 @@ function looksLikePemPrivateKey(key) {
  * @returns {Promise<import('google-auth-library').JWT | import('google-auth-library').AuthClient>}
  */
 async function getSheetsAuth() {
-  const keyFile = resolveServiceAccountKeyFilePath();
-  if (keyFile) {
+  const fromApp = credentialsFromGoogleApplicationEnv();
+  if (fromApp?.kind === "file") {
     const auth = new google.auth.GoogleAuth({
-      keyFile,
+      keyFile: fromApp.path,
+      scopes: [SHEETS_SCOPE],
+    });
+    return auth.getClient();
+  }
+  if (fromApp?.kind === "inline") {
+    const o = fromApp.credentials;
+    const auth = new google.auth.GoogleAuth({
+      credentials: {
+        client_email: o.client_email,
+        private_key: normalizePrivateKey(o.private_key),
+      },
       scopes: [SHEETS_SCOPE],
     });
     return auth.getClient();
@@ -242,9 +280,9 @@ function appendUsageLog(row) {
       console.error("[sheets] append failed", msg);
       if (/DECODER|unsupported|PEM|private key/i.test(msg)) {
         console.error(
-          "[sheets] Hint: put the downloaded service-account JSON on disk and set " +
-            "GOOGLE_APPLICATION_CREDENTIALS=/full/path/to/key.json (recommended), " +
-            "or fix GOOGLE_PRIVATE_KEY newlines (real line breaks or \\n inside quotes).",
+          "[sheets] Hint: on Vercel paste the full key JSON into GOOGLE_SERVICE_ACCOUNT_JSON " +
+            "(or GOOGLE_APPLICATION_CREDENTIALS as raw JSON — not a path), " +
+            "or set GOOGLE_SERVICE_ACCOUNT_EMAIL + GOOGLE_PRIVATE_KEY with real newlines or \\n.",
         );
       }
     }

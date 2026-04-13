@@ -6,17 +6,46 @@ const {
 } = require("./firecrawlScrape");
 
 const MODEL = "claude-sonnet-4-20250514";
-const MAX_TOKENS = 4000;
-const MAX_PAUSE_CONTINUATIONS = 10;
 const LOG_PREVIEW_CHARS = 2500;
 
-const WEB_SEARCH_TOOLS = [
-  {
-    type: "web_search_20250305",
-    name: "web_search",
-    max_uses: 10,
-  },
-];
+/** Output budget per messages.create / stream segment (long briefs + citations need headroom). */
+const MAX_TOKENS = Math.min(
+  64_000,
+  Math.max(
+    2048,
+    Number.parseInt(process.env.RESEARCH_MAX_OUTPUT_TOKENS || "8192", 10) || 8192,
+  ),
+);
+
+/**
+ * Web search can return stop_reason pause_turn many times; each continuation is a new request.
+ * Hitting this cap surfaces PAUSE_TURN_LIMIT; too-low values feel like a "max turn" cutoff.
+ */
+const MAX_PAUSE_CONTINUATIONS = Math.min(
+  80,
+  Math.max(
+    1,
+    Number.parseInt(process.env.RESEARCH_MAX_PAUSE_CONTINUATIONS || "32", 10) ||
+      32,
+  ),
+);
+
+function webSearchTools() {
+  const maxUses = Math.min(
+    30,
+    Math.max(
+      1,
+      Number.parseInt(process.env.RESEARCH_WEB_SEARCH_MAX_USES || "15", 10) || 15,
+    ),
+  );
+  return [
+    {
+      type: "web_search_20250305",
+      name: "web_search",
+      max_uses: maxUses,
+    },
+  ];
+}
 
 /** Retries per API call (streaming segment or messages.create turn). */
 const MAX_ANTHROPIC_RETRIES = Math.min(
@@ -413,7 +442,7 @@ async function generateBrief({
     firecrawlConfigured: isFirecrawlConfigured(),
     model: MODEL,
     max_tokens: MAX_TOKENS,
-    web_search_max_uses: WEB_SEARCH_TOOLS[0]?.max_uses,
+    web_search_max_uses: webSearchTools()[0]?.max_uses,
     max_pause_continuations: MAX_PAUSE_CONTINUATIONS,
   });
 
@@ -453,7 +482,7 @@ async function generateBrief({
     model: MODEL,
     max_tokens: MAX_TOKENS,
     system: RESEARCH_SYSTEM_PROMPT,
-    ...(useSingleSource ? {} : { tools: WEB_SEARCH_TOOLS }),
+    ...(useSingleSource ? {} : { tools: webSearchTools() }),
   };
 
   const messages = [{ role: "user", content: userContent }];
@@ -491,7 +520,7 @@ async function generateBrief({
       "[research] still pause_turn after max continuations — failing",
     );
     const err = new Error(
-      "Research paused without completing; try again or increase limits.",
+      "Research paused without completing; increase RESEARCH_MAX_PAUSE_CONTINUATIONS or retry.",
     );
     err.code = "PAUSE_TURN_LIMIT";
     throw err;
@@ -559,7 +588,7 @@ async function streamResearchBrief(req, res, {
     firecrawlConfigured: isFirecrawlConfigured(),
     model: MODEL,
     max_tokens: MAX_TOKENS,
-    web_search_max_uses: WEB_SEARCH_TOOLS[0]?.max_uses,
+    web_search_max_uses: webSearchTools()[0]?.max_uses,
     max_pause_continuations: MAX_PAUSE_CONTINUATIONS,
   });
 
@@ -602,7 +631,7 @@ async function streamResearchBrief(req, res, {
     model: MODEL,
     max_tokens: MAX_TOKENS,
     system: RESEARCH_SYSTEM_PROMPT,
-    ...(useSingleSource ? {} : { tools: WEB_SEARCH_TOOLS }),
+    ...(useSingleSource ? {} : { tools: webSearchTools() }),
   };
 
   let messages = [{ role: "user", content: userContent }];
@@ -692,6 +721,11 @@ async function streamResearchBrief(req, res, {
             streamErr instanceof Error
               ? streamErr.message
               : "Stream failed before completion.";
+          if (/stream ended|without producing|prematurely/i.test(msg)) {
+            console.error(
+              "[research] Incomplete SSE often means the host cut the connection (e.g. Vercel maxDuration) or the API closed early. Try a higher functions.maxDuration (Pro) or a shorter brief path (Firecrawl).",
+            );
+          }
           writeSse(res, {
             type: "error",
             message: msg,
@@ -770,13 +804,13 @@ async function streamResearchBrief(req, res, {
           type: "error",
           code: "PAUSE_TURN_LIMIT",
           message:
-            "Research paused too many times. Try again or raise MAX_PAUSE_CONTINUATIONS.",
+            "Research paused too many times (web search loop). Set RESEARCH_MAX_PAUSE_CONTINUATIONS higher or try again.",
         });
         return {
           ok: false,
           errorCode: "PAUSE_TURN_LIMIT",
           errorMessage:
-            "Research paused too many times. Try again or raise MAX_PAUSE_CONTINUATIONS.",
+            "Research paused too many times. Increase RESEARCH_MAX_PAUSE_CONTINUATIONS or retry.",
           elapsedMs: Date.now() - t0,
           tokenUsage: tokenUsageTotals,
         };

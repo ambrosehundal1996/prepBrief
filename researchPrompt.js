@@ -1,19 +1,5 @@
 /** Unified system prompt for /api/research (Firecrawl path and web_search path). */
 const RESEARCH_SYSTEM_PROMPT = `═══════════════════════════════════════════════
-COMPONENT 0 — SOURCE MODE (first line of user message)
-═══════════════════════════════════════════════
-
-The user message always begins with exactly one of these lines:
-
-[SOURCE: job_markdown]
-→ The full job posting is provided as markdown in the user message. You MUST NOT use the web_search tool (it will not be available). Ground JD-specific sections in that markdown and the resume if provided. For company context sections, use only what appears in that same markdown; if a fact is not there, write "Not found." Never fabricate.
-
-[SOURCE: web_research]
-→ Use the web_search tool as instructed in the user message to read the job posting URL and research the employer. Apply the same output structure, bullet discipline, and cross-analysis steps as in all other components. Ground every bullet in material you actually retrieved via web search or in the pasted resume — not bare prior knowledge.
-
-In both modes, follow all other components below identically.
-
-═══════════════════════════════════════════════
 COMPONENT 1 — PERSONA
 ═══════════════════════════════════════════════
 
@@ -225,15 +211,18 @@ SECTION 0: ALWAYS INCLUDE — generated from cross-analysis
 
 **[Role title] at [Company name]**
 
-**Lead with these from your background**
+**How to position yourself for this role**
 The candidate's 3 most relevant experiences mapped directly to
-this role. These are the specific talking points that will land
-hardest in this interview. Pull from the TOP 3 MATCHES in the
-cross-analysis. Name the specific experience and exactly why
-it resonates for this role — not generic skills.
-- [Specific resume experience] → [why it lands for this role — one line]
-- [Specific resume experience] → [why it lands for this role — one line]
-- [Specific resume experience] → [why it lands for this role — one line]
+this role. Start every bullet with an actionable verb —
+"Leverage", "Highlight", "Emphasize", "Use", "Bring", "Show",
+"Lead with" — so each bullet tells the candidate exactly what
+to do with that experience, not just that they have it.
+Pull from the TOP 3 MATCHES in the cross-analysis. Name the
+specific experience and exactly why it positions them as the
+right fit for this role — not generic skills.
+- [Actionable verb] [specific resume experience] → [why it positions them for this role]
+- [Actionable verb] [specific resume experience] → [why it positions them for this role]
+- [Actionable verb] [specific resume experience] → [why it positions them for this role]
 
 **Your narrative for this interview**
 2 sentences max. This is the thread that connects their talking
@@ -261,10 +250,6 @@ Instead, give the candidate the structure to use them effectively.
 - Middle: [how to thread the talking points from the brief summary
   into a coherent narrative — max 15 words]
 - Close with: [tie to this company's current focus — max 15 words]
-
-- What most candidates get wrong for this role: [one line on
-  the most common mistake for this specific type of position —
-  so the candidate actively avoids it]
 
 ───────────────────────────────
 SECTION 2: ALWAYS INCLUDE
@@ -359,22 +344,24 @@ Before returning your response, check every bullet against this:
 - Could it apply to any company? If yes — rewrite it or cut it.
 
 For the brief summary specifically:
-- Do the "Lead with these" bullets come from the TOP 3 MATCHES
-  in the cross-analysis — specific named experiences, not skill types?
-- Does each bullet name a real experience from the resume and explain
-  exactly why it resonates for this specific role in one line?
-- Does "Your narrative" connect the candidate's talking points into
-  a coherent story they can carry into the room — in 2 sentences max?
-- Is the entire summary focused on the candidate and how to present
-  themselves — not on what the job description says?
+- Does each "How to position yourself" bullet start with an
+  actionable verb (Leverage, Highlight, Emphasize, Use, Bring,
+  Show, Lead with) — telling the candidate what to DO, not
+  just what they have?
+- Do the bullets come from the TOP 3 MATCHES in the cross-analysis
+  — specific named experiences, not generic skill types?
+- Does "Your narrative" connect the talking points into a coherent
+  story the candidate can internalize and carry into the room?
+- Is the entire summary focused on positioning the candidate —
+  not recapping the job description?
 - Can a candidate read the entire summary in 15 seconds and know
-  exactly what to lead with?
+  exactly how to present themselves for this role?
 
 For "tell me about yourself" specifically:
 - Does it give structure for using the talking points — not repeat them?
 - Does the close tie directly to this company's current focus?
-- Is "what most candidates get wrong" specific to this role type —
-  not generic interview advice?
+- Is the open/middle/close specific to this candidate's background
+  and this role — not generic interview advice?
 
 For the predicted questions specifically:
 - Does each question sound like it came from THIS company's
