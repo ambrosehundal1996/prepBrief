@@ -1,8 +1,5 @@
 const { Anthropic } = require("@anthropic-ai/sdk");
-const {
-  RESEARCH_SYSTEM_PROMPT,
-  RESEARCH_SYSTEM_PROMPT_SINGLE_SOURCE,
-} = require("./researchPrompt");
+const { RESEARCH_SYSTEM_PROMPT } = require("./researchPrompt");
 const {
   scrapeJobPostingUrl,
   isFirecrawlConfigured,
@@ -21,6 +18,95 @@ const WEB_SEARCH_TOOLS = [
   },
 ];
 
+/** Retries per API call (streaming segment or messages.create turn). */
+const MAX_ANTHROPIC_RETRIES = Math.min(
+  10,
+  Math.max(
+    1,
+    Number.parseInt(process.env.ANTHROPIC_MAX_RETRIES || "5", 10) || 5,
+  ),
+);
+
+const ANTHROPIC_RETRY_BASE_MS = Math.min(
+  60_000,
+  Math.max(
+    400,
+    Number.parseInt(process.env.ANTHROPIC_RETRY_BASE_MS || "2000", 10) ||
+      2000,
+  ),
+);
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Transient Anthropic capacity / throttle errors — safe to retry whole request.
+ * @param {unknown} err
+ */
+function isRetriableAnthropicError(err) {
+  if (err == null || typeof err !== "object") return false;
+  const o = /** @type {Record<string, unknown>} */ (err);
+  const nested =
+    o.error &&
+    typeof o.error === "object" &&
+    /** @type {Record<string, unknown>} */ (o.error).error;
+  const deepType =
+    nested && typeof nested === "object"
+      ? /** @type {Record<string, unknown>} */ (nested).type
+      : undefined;
+  const midType =
+    o.error && typeof o.error === "object"
+      ? /** @type {Record<string, unknown>} */ (o.error).type
+      : undefined;
+  const t = deepType || midType || o.type;
+  if (t === "overloaded_error" || t === "rate_limit_error") return true;
+  const status = o.status;
+  if (status === 429 || status === 503 || status === 529) return true;
+  const msg = String(o.message || "");
+  if (/overloaded|rate[_ ]limit|529|503|temporarily unavailable/i.test(msg)) {
+    return true;
+  }
+  return false;
+}
+
+function anthropicRetryDelayMs(attemptIndex) {
+  const exp = ANTHROPIC_RETRY_BASE_MS * 2 ** Math.max(0, attemptIndex - 1);
+  const cap = 45_000;
+  const jitter = Math.floor(Math.random() * 400);
+  return Math.min(cap, exp) + jitter;
+}
+
+/**
+ * @param {import('@anthropic-ai/sdk').Anthropic} client
+ * @param {Parameters<import('@anthropic-ai/sdk').Anthropic['messages']['create']>[0]} params
+ */
+async function messagesCreateWithRetry(client, params) {
+  let lastErr;
+  for (let attempt = 1; attempt <= MAX_ANTHROPIC_RETRIES; attempt += 1) {
+    try {
+      return await client.messages.create(params);
+    } catch (e) {
+      lastErr = e;
+      if (!isRetriableAnthropicError(e) || attempt >= MAX_ANTHROPIC_RETRIES) {
+        throw e;
+      }
+      const delay = anthropicRetryDelayMs(attempt);
+      console.warn("[research] Anthropic messages.create retriable; retrying", {
+        attempt,
+        nextDelayMs: delay,
+        error:
+          e instanceof Error            ? e.message
+            : String(/** @type {object} */ (e)?.type || e),
+      });
+      await sleep(delay);
+    }
+  }
+  throw lastErr instanceof Error
+    ? lastErr
+    : new Error("Anthropic request failed after retries.");
+}
+
 function buildUserMessage({
   companyUrl,
   jobUrl,
@@ -36,7 +122,9 @@ function buildUserMessage({
     typeof companyUrl === "string" ? companyUrl.trim() : "";
   const hasCompany = companyTrimmed.length > 0;
 
-  let text = `Research the company for an interview candidate using web search.
+  let text = `[SOURCE: web_research]
+
+Research the company for an interview candidate using web search.
 
 `;
 
@@ -131,7 +219,9 @@ function buildUserMessageSingleSource({
     typeof companyUrl === "string" ? companyUrl.trim() : "";
   const hasCompany = companyTrimmed.length > 0;
 
-  let text = `Below is the **full job posting** scraped as markdown from this URL (your only source — do not use web search):
+  let text = `[SOURCE: job_markdown]
+
+Below is the **full job posting** scraped as markdown from this URL (your only source — do not use web search):
 ${jobUrlTrimmed}
 
 `;
@@ -362,16 +452,14 @@ async function generateBrief({
   const baseParams = {
     model: MODEL,
     max_tokens: MAX_TOKENS,
-    system: useSingleSource
-      ? RESEARCH_SYSTEM_PROMPT_SINGLE_SOURCE
-      : RESEARCH_SYSTEM_PROMPT,
+    system: RESEARCH_SYSTEM_PROMPT,
     ...(useSingleSource ? {} : { tools: WEB_SEARCH_TOOLS }),
   };
 
   const messages = [{ role: "user", content: userContent }];
 
   console.log("[research] messages.create (initial turn) …");
-  let response = await client.messages.create({
+  let response = await messagesCreateWithRetry(client, {
     ...baseParams,
     messages,
   });
@@ -390,7 +478,7 @@ async function generateBrief({
       `[research] stop_reason=pause_turn → continuation ${continuations}/${MAX_PAUSE_CONTINUATIONS} (appending assistant content, calling messages.create again) …`,
     );
     messages.push({ role: "assistant", content: response.content });
-    response = await client.messages.create({
+    response = await messagesCreateWithRetry(client, {
       ...baseParams,
       messages,
     });
@@ -513,9 +601,7 @@ async function streamResearchBrief(req, res, {
   const baseParams = {
     model: MODEL,
     max_tokens: MAX_TOKENS,
-    system: useSingleSource
-      ? RESEARCH_SYSTEM_PROMPT_SINGLE_SOURCE
-      : RESEARCH_SYSTEM_PROMPT,
+    system: RESEARCH_SYSTEM_PROMPT,
     ...(useSingleSource ? {} : { tools: WEB_SEARCH_TOOLS }),
   };
 
@@ -543,37 +629,93 @@ async function streamResearchBrief(req, res, {
 
   try {
     while (true) {
-      const stream = client.messages.stream({
-        ...baseParams,
-        messages,
-      });
-      activeStream = stream;
-
-      stream.on("text", (delta) => {
-        if (delta) writeSse(res, { type: "text", text: delta });
-      });
-
       let final;
-      try {
-        final = await stream.finalMessage();
-      } catch (streamErr) {
-        console.error("[research] stream segment failed", streamErr);
-        const msg =
-          streamErr instanceof Error
-            ? streamErr.message
-            : "Stream failed before completion.";
-        writeSse(res, {
-          type: "error",
-          message: msg,
+      /** @type {import('@anthropic-ai/sdk').MessageStream | null} */
+      let stream = null;
+      let streamAttempt = 0;
+
+      while (streamAttempt < MAX_ANTHROPIC_RETRIES) {
+        streamAttempt += 1;
+        let emittedTextThisAttempt = false;
+
+        stream = client.messages.stream({
+          ...baseParams,
+          messages,
         });
+        activeStream = stream;
+
+        stream.on("text", (delta) => {
+          if (delta) {
+            emittedTextThisAttempt = true;
+            writeSse(res, { type: "text", text: delta });
+          }
+        });
+
+        try {
+          final = await stream.finalMessage();
+          activeStream = null;
+          break;
+        } catch (streamErr) {
+          activeStream = null;
+          try {
+            stream.abort();
+          } catch {
+            /* ignore */
+          }
+
+          const canRetry =
+            isRetriableAnthropicError(streamErr) &&
+            !emittedTextThisAttempt &&
+            streamAttempt < MAX_ANTHROPIC_RETRIES;
+
+          if (canRetry) {
+            const delay = anthropicRetryDelayMs(streamAttempt);
+            console.warn(
+              "[research] Anthropic stream retriable error; retrying segment",
+              {
+                streamAttempt,
+                maxAttempts: MAX_ANTHROPIC_RETRIES,
+                delayMs: delay,
+                error:
+                  streamErr instanceof Error
+                    ? streamErr.message
+                    : String(streamErr),
+              },
+            );
+            writeSse(res, { type: "phase", phase: "model_retry" });
+            await sleep(delay);
+            continue;
+          }
+
+          console.error("[research] stream segment failed", streamErr);
+          const msg =
+            streamErr instanceof Error
+              ? streamErr.message
+              : "Stream failed before completion.";
+          writeSse(res, {
+            type: "error",
+            message: msg,
+          });
+          return {
+            ok: false,
+            errorMessage: msg,
+            elapsedMs: Date.now() - t0,
+            tokenUsage: tokenUsageTotals,
+          };
+        }
+      }
+
+      if (!final || !stream) {
+        const fallback =
+          "The AI service is busy. Please try again in a few seconds.";
+        console.error("[research] stream segment exhausted retries");
+        writeSse(res, { type: "error", message: fallback });
         return {
           ok: false,
-          errorMessage: msg,
+          errorMessage: fallback,
           elapsedMs: Date.now() - t0,
           tokenUsage: tokenUsageTotals,
         };
-      } finally {
-        activeStream = null;
       }
 
       logMessageStep(

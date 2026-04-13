@@ -79,6 +79,7 @@ function normalizeTitle(t) {
 }
 
 const INTERVIEW_KEYS = [
+  'brief summary',
   'tell me about yourself',
   "what they're likely to ask you",
   'what they are likely to ask you',

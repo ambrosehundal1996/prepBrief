@@ -1,6 +1,9 @@
+import { extractStickyBriefHeader } from './briefDisplay.js'
+
 const STORAGE_KEY = 'prepbrief_saved_briefs_v1'
 export const MAX_SAVED_BRIEFS = 30
 const MAX_MARKDOWN_CHARS = 100_000
+const MAX_LIST_TITLE_CHARS = 100
 
 function hostnameFromUrl(jobUrl) {
   try {
@@ -12,44 +15,23 @@ function hostnameFromUrl(jobUrl) {
 }
 
 /**
- * Best-effort company label from brief markdown (matches our prompt section headers).
+ * List title for saved briefs: "Job title (Company)" using the same parsing as the * in-brief sticky header (role + company from markdown / URL fallbacks).
  * @param {string} markdown
  * @param {string} jobUrl
  */
-export function extractCompanyLabel(markdown, jobUrl) {
-  const fallback = hostnameFromUrl(jobUrl)
-  if (!markdown || typeof markdown !== 'string') return fallback
-
-  const trimTitle = (raw) => {
-    let t = String(raw).replace(/\*\*/g, '').replace(/^[-*]\s*/, '').trim()
-    t = t.replace(/\s+/g, ' ')
-    if (t.length > 72) return `${t.slice(0, 69)}…`
-    return t || fallback
+export function formatSavedBriefListTitle(markdown, jobUrl) {
+  const { company, role } = extractStickyBriefHeader(
+    typeof markdown === 'string' ? markdown : '',
+    typeof jobUrl === 'string' ? jobUrl : '',
+  )
+  const jobTitle = String(role || '').replace(/\s+/g, ' ').trim() || 'Role'
+  const co =
+    String(company || '').replace(/\s+/g, ' ').trim() || hostnameFromUrl(jobUrl)
+  let title = `${jobTitle} (${co})`
+  if (title.length > MAX_LIST_TITLE_CHARS) {
+    title = `${title.slice(0, MAX_LIST_TITLE_CHARS - 1)}…`
   }
-
-  const sectionBodyAfter = (headingRegex) => {
-    const m = markdown.match(headingRegex)
-    if (!m || m.index === undefined) return null
-    const start = m.index + m[0].length
-    const rest = markdown.slice(start)
-    const next = rest.search(/\n##\s/)
-    const chunk = next === -1 ? rest : rest.slice(0, next)
-    return chunk
-  }
-
-  const overviewChunk = sectionBodyAfter(/^##\s*Company overview\s*$/im)
-  if (overviewChunk) {
-    const bullet = overviewChunk.match(/^\s*[-*]\s+(.+)$/m)
-    if (bullet?.[1]) return trimTitle(bullet[1])
-  }
-
-  const summaryChunk = sectionBodyAfter(/^##\s*Company Summary\s*$/im)
-  if (summaryChunk) {
-    const text = summaryChunk.trim().split(/\n{2,}/)[0]?.replace(/\n/g, ' ').trim()
-    if (text) return trimTitle(text)
-  }
-
-  return fallback
+  return title
 }
 
 function newId() {
@@ -100,11 +82,12 @@ export function saveBriefToHistory({ jobUrl, markdown }) {
 
   if (!md.trim()) return { ok: false, items: loadBriefHistory() }
 
+  const ju = String(jobUrl || '').trim()
   const entry = {
     id: newId(),
     savedAt: new Date().toISOString(),
-    companyName: extractCompanyLabel(md, jobUrl),
-    jobUrl: String(jobUrl || '').trim(),
+    companyName: formatSavedBriefListTitle(md, ju),
+    jobUrl: ju,
     markdown: md,
   }
 

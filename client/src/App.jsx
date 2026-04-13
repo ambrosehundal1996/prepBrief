@@ -865,6 +865,125 @@ export default function App() {
         </form>
         )}
 
+        {markdown !== null && (
+          <section
+            id="your-brief"
+            className="output-section"
+            ref={outputRef}
+            aria-label="Research brief"
+          >
+            {activeSavedId && (
+              <div className="history-banner" role="status">
+                <span>Viewing a saved brief from this browser.</span>
+                <button
+                  type="button"
+                  className="history-banner-dismiss"
+                  onClick={() => {
+                    setActiveSavedId(null)
+                    setMarkdown(null)
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            )}
+            <div className="output-header">
+              <h2>Your brief</h2>
+              {responseTimeMs != null && (
+                <p className="response-time">
+                  Total time: {formatResponseTime(responseTimeMs)}
+                </p>
+              )}
+            </div>
+            {briefSections.length > 0 && markdown !== '' && (
+              <div className="sticky-brief-header" role="status">
+                <span className="sticky-brief-header-company">
+                  {stickyBriefContext.company}
+                </span>
+                <span className="sticky-brief-header-sep" aria-hidden>
+                  ·
+                </span>
+                <span className="sticky-brief-header-role">
+                  {stickyBriefContext.role}
+                </span>
+              </div>
+            )}
+            <div
+              className={
+                sectionNavItems.length > 0
+                  ? 'brief-layout'
+                  : 'brief-layout brief-layout--content-only'
+              }
+            >
+              {sectionNavItems.length > 0 && (
+                <nav className="toc-vertical" aria-label="Brief sections">
+                  <p className="toc-vertical-title">Jump to</p>
+                  <ul className="toc-vertical-list">
+                    {sectionNavItems.map((item) => {
+                      const isActive = activeBriefNavId === item.id
+                      return (
+                        <li key={item.id}>
+                          <a
+                            className={
+                              isActive ? 'toc-tab toc-tab--active' : 'toc-tab'
+                            }
+                            href={`#${item.id}`}
+                            aria-current={isActive ? 'location' : undefined}
+                          >
+                            {item.title}
+                          </a>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </nav>
+              )}
+              <div className="brief-stack">
+                {briefSections.length === 0 ? (
+                  <article className="brief-section brief-section--pending">
+                    <p className="brief-pending">Generating…</p>
+                  </article>
+                ) : (
+                  (() => {
+                    let prevGroup = null
+                    return briefSections.flatMap((chunk, i) => {
+                      const title = getSectionTitle(chunk)
+                      const id = sectionNavItems[i].id
+                      const group = getBriefSectionGroup(title)
+                      const pieces = []
+                      if (group && group !== prevGroup) {
+                        pieces.push(
+                          <p
+                            key={`group-${id}`}
+                            className="section-group-label"
+                          >
+                            {group === 'interview'
+                              ? 'Interview preparation'
+                              : 'Company context'}
+                          </p>,
+                        )
+                        prevGroup = group
+                      } else if (!group) {
+                        prevGroup = null
+                      }
+                      pieces.push(
+                        <BriefSectionCard
+                          key={id}
+                          id={id}
+                          title={title}
+                          chunk={chunk}
+                          markdownComponents={markdownComponents}
+                        />,
+                      )
+                      return pieces
+                    })
+                  })()
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
                     {!savedBriefsPanelOpen && !resumePanelOpen && (
                       <>
                         <section
@@ -1194,124 +1313,6 @@ export default function App() {
         </section>
         )}
 
-        {markdown !== null && (
-          <section
-            id="your-brief"
-            className="output-section"
-            ref={outputRef}
-            aria-label="Research brief"
-          >
-            {activeSavedId && (
-              <div className="history-banner" role="status">
-                <span>Viewing a saved brief from this browser.</span>
-                <button
-                  type="button"
-                  className="history-banner-dismiss"
-                  onClick={() => {
-                    setActiveSavedId(null)
-                    setMarkdown(null)
-                  }}
-                >
-                  Close
-                </button>
-              </div>
-            )}
-            <div className="output-header">
-              <h2>Your brief</h2>
-              {responseTimeMs != null && (
-                <p className="response-time">
-                  Total time: {formatResponseTime(responseTimeMs)}
-                </p>
-              )}
-            </div>
-            {briefSections.length > 0 && markdown !== '' && (
-              <div className="sticky-brief-header" role="status">
-                <span className="sticky-brief-header-company">
-                  {stickyBriefContext.company}
-                </span>
-                <span className="sticky-brief-header-sep" aria-hidden>
-                  ·
-                </span>
-                <span className="sticky-brief-header-role">
-                  {stickyBriefContext.role}
-                </span>
-              </div>
-            )}
-            <div
-              className={
-                sectionNavItems.length > 0
-                  ? 'brief-layout'
-                  : 'brief-layout brief-layout--content-only'
-              }
-            >
-              {sectionNavItems.length > 0 && (
-                <nav className="toc-vertical" aria-label="Brief sections">
-                  <p className="toc-vertical-title">Jump to</p>
-                  <ul className="toc-vertical-list">
-                    {sectionNavItems.map((item) => {
-                      const isActive = activeBriefNavId === item.id
-                      return (
-                        <li key={item.id}>
-                          <a
-                            className={
-                              isActive ? 'toc-tab toc-tab--active' : 'toc-tab'
-                            }
-                            href={`#${item.id}`}
-                            aria-current={isActive ? 'location' : undefined}
-                          >
-                            {item.title}
-                          </a>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </nav>
-              )}
-              <div className="brief-stack">
-                {briefSections.length === 0 ? (
-                  <article className="brief-section brief-section--pending">
-                    <p className="brief-pending">Generating…</p>
-                  </article>
-                ) : (
-                  (() => {
-                    let prevGroup = null
-                    return briefSections.flatMap((chunk, i) => {
-                      const title = getSectionTitle(chunk)
-                      const id = sectionNavItems[i].id
-                      const group = getBriefSectionGroup(title)
-                      const pieces = []
-                      if (group && group !== prevGroup) {
-                        pieces.push(
-                          <p
-                            key={`group-${id}`}
-                            className="section-group-label"
-                          >
-                            {group === 'interview'
-                              ? 'Interview preparation'
-                              : 'Company context'}
-                          </p>,
-                        )
-                        prevGroup = group
-                      } else if (!group) {
-                        prevGroup = null
-                      }
-                      pieces.push(
-                        <BriefSectionCard
-                          key={id}
-                          id={id}
-                          title={title}
-                          chunk={chunk}
-                          markdownComponents={markdownComponents}
-                        />,
-                      )
-                      return pieces
-                    })
-                  })()
-                )}
-              </div>
-            </div>
-          </section>
-        )}
         </main>
                   </>
                 }

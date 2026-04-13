@@ -960,7 +960,8 @@ main#top {
 }
 
 .output-section {
-  margin-top: 2rem;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
   scroll-margin-top: calc(0.75rem + 3.25rem);
 }
 
