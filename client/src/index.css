@@ -4,7 +4,18 @@
   box-sizing: border-box;
 }
 
+:root {
+  /* Dark sapphire shell — surfaces that sit on the page gradient */
+  --pb-page-fg: #e8eef7;
+  --pb-page-fg-muted: #94a3b8;
+  --pb-chrome-bg: rgba(8, 17, 35, 0.94);
+  --pb-chrome-border: rgba(148, 163, 184, 0.18);
+  --pb-chrome-inset: rgba(255, 255, 255, 0.06);
+}
+
 html {
+  /* Slightly larger than the common 16px default so rem-based UI scales up together. */
+  font-size: 17px;
   scroll-padding-top: 0.75rem;
   scroll-behavior: smooth;
 }
@@ -18,14 +29,26 @@ html {
 body {
   margin: 0;
   min-height: 100svh;
-  font-family: Inter, system-ui, -apple-system, sans-serif;
-  font-size: 16px;
-  line-height: 1.5;
-  color: #221527;
+  font-family:
+    "Source Sans 3",
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--pb-page-fg);
+  /* Dark sapphire: deep blue-navy with cyan highlights */
   background:
-    radial-gradient(ellipse 120% 80% at 50% -20%, rgba(139, 92, 246, 0.14), transparent),
-    radial-gradient(ellipse 80% 50% at 100% 50%, rgba(167, 139, 250, 0.1), transparent),
-    linear-gradient(165deg, #f3ecfc 0%, #efe7f8 35%, #faf7ff 70%, #f0e8f6 100%);
+    radial-gradient(ellipse 115% 78% at 50% -18%, rgba(56, 189, 248, 0.14), transparent),
+    radial-gradient(ellipse 72% 52% at 100% 48%, rgba(14, 165, 233, 0.1), transparent),
+    radial-gradient(ellipse 60% 42% at 0% 100%, rgba(30, 58, 138, 0.35), transparent),
+    linear-gradient(
+      168deg,
+      #0f1b32 0%,
+      #0a1428 32%,
+      #152a4a 58%,
+      #070d18 100%
+    );
   background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
 }

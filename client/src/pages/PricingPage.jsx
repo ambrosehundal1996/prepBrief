@@ -7,7 +7,7 @@ const tiers = [
     tagline: 'Try it out',
     featured: false,
     features: [
-      '3 briefs total',
+      'Unlimited briefs',
       'Company research sections',
       'Predicted interview questions',
       'Why I’m interested talking points',
@@ -100,8 +100,8 @@ export default function PricingPage() {
           No credit card required to start. Cancel anytime.
         </p>
         <p className="pricing-disclaimer">
-          Paid tiers describe planned product packaging. Today you can try PrepBrief
-          with the free tier limits shown in the app.
+          Paid tiers describe planned product packaging. Today you can use
+          PrepBrief at no cost with no generation cap.
         </p>
       </div>
     </main>

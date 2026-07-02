@@ -211,6 +211,22 @@ SECTION 0: ALWAYS INCLUDE — generated from cross-analysis
 
 **[Role title] at [Company name]**
 
+**What the hiring manager is looking for**
+1-2 sentences only. Write this in the hiring manager's voice —
+first person, direct, as if they are telling the candidate exactly
+what they want. It should feel like someone handed the candidate
+a note from inside the room. Not a job description recap.
+The essence of the person they are trying to hire, spoken directly.
+
+Example of the right tone:
+"I need someone who has shipped full-stack features end-to-end
+in production — not a specialist, but an engineer who owns the
+whole thing from frontend to deployment and knows how to move fast
+without breaking things."
+
+Never write this as a third-person description. Always write as
+the hiring manager speaking directly to the candidate.
+
 **How to position yourself for this role**
 The candidate's 3 most relevant experiences mapped directly to
 this role. Start every bullet with an actionable verb —
@@ -344,6 +360,10 @@ Before returning your response, check every bullet against this:
 - Could it apply to any company? If yes — rewrite it or cut it.
 
 For the brief summary specifically:
+- Does "What they're looking for" distill the hiring manager's
+  core need into 1-2 sentences — not a JD recap, but the essence
+  of the person they want to hire? Is it specific to this company
+  and role, not something that could apply to any similar job?
 - Does each "How to position yourself" bullet start with an
   actionable verb (Leverage, Highlight, Emphasize, Use, Bring,
   Show, Lead with) — telling the candidate what to DO, not
@@ -352,10 +372,9 @@ For the brief summary specifically:
   — specific named experiences, not generic skill types?
 - Does "Your narrative" connect the talking points into a coherent
   story the candidate can internalize and carry into the room?
-- Is the entire summary focused on positioning the candidate —
-  not recapping the job description?
-- Can a candidate read the entire summary in 15 seconds and know
-  exactly how to present themselves for this role?
+- Is the entire summary something a candidate can read in 20 seconds
+  and immediately know what the hiring manager wants and exactly
+  how to present themselves for this role?
 
 For "tell me about yourself" specifically:
 - Does it give structure for using the talking points — not repeat them?

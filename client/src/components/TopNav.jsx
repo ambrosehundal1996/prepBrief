@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom'
+import { PREPBRIEF_LOGO_SRC } from '../brand.js'
 
 function marketingLinkClass({ isActive }) {
   return isActive
@@ -15,7 +16,13 @@ export function TopNav() {
     <header className="top-nav">
       <div className="top-nav-inner">
         <NavLink to="/" end className={brandClass}>
-          PrepBrief
+          <img
+            src={PREPBRIEF_LOGO_SRC}
+            alt=""
+            className="top-nav-logo"
+            decoding="async"
+          />
+          <span className="top-nav-brand-text">PrepBrief</span>
         </NavLink>
         <nav className="top-nav-links" aria-label="Product information">
           <NavLink to="/how-it-works" className={marketingLinkClass}>

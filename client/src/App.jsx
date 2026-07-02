@@ -21,6 +21,7 @@ import {
   loadStoredResumeFile,
   saveStoredResume,
 } from './resumeStorage'
+import { PREPBRIEF_LOGO_SRC } from './brand.js'
 import './App.css'
 
 function isValidHttpUrl(value) {
@@ -35,56 +36,6 @@ function isValidHttpUrl(value) {
 function apiUrl(path) {
   const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
   return `${base}${path}`
-}
-
-const FREE_BRIEF_LIMIT_PROD = 3
-const STORAGE_KEY_FREE_USES = 'prepbrief_free_uses_used'
-
-/** `vite build` / production deploy, or set VITE_FORCE_TRIAL_LIMIT=true to test the cap locally. */
-const isTrialCapped =
-  import.meta.env.PROD ||
-  import.meta.env.VITE_FORCE_TRIAL_LIMIT === 'true'
-
-const FREE_BRIEF_LIMIT = FREE_BRIEF_LIMIT_PROD
-
-function readFreeUsesConsumed() {
-  if (!isTrialCapped) return 0
-  try {
-    const v = localStorage.getItem(STORAGE_KEY_FREE_USES)
-    if (v == null) return 0
-    const n = parseInt(v, 10)
-    if (!Number.isFinite(n)) return 0
-    return Math.min(FREE_BRIEF_LIMIT, Math.max(0, n))
-  } catch {
-    return 0
-  }
-}
-
-function writeFreeUsesConsumed(n) {
-  if (!isTrialCapped) return
-  try {
-    localStorage.setItem(
-      STORAGE_KEY_FREE_USES,
-      String(Math.min(FREE_BRIEF_LIMIT, Math.max(0, n))),
-    )
-  } catch {
-    /* private mode — session only; state still updates in React */
-  }
-}
-
-async function logTrialBlockedToServer(jobUrl, freeUsesConsumed) {
-  try {
-    await fetch(apiUrl('/api/log-client-event'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jobUrl,
-        freeUsesUsed: freeUsesConsumed,
-      }),
-    })
-  } catch (e) {
-    console.warn('[prepbrief] log-client-event failed', e)
-  }
 }
 
 /** Human-readable duration from click to full response (ms). */
@@ -140,6 +91,7 @@ function sectionSlug(label) {
 }
 
 const RESUME_ACCEPT = '.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+const DEMO_VIDEO_ACCEPT = 'video/mp4,video/webm,video/quicktime'
 
 function isAllowedResumeFile(file) {
   if (!file || typeof file.name !== 'string') return false
@@ -168,9 +120,6 @@ export default function App() {
   const [apiError, setApiError] = useState('')
   const [markdown, setMarkdown] = useState(null)
   const [responseTimeMs, setResponseTimeMs] = useState(null)
-  const [freeUsesConsumed, setFreeUsesConsumed] = useState(() =>
-    isTrialCapped ? readFreeUsesConsumed() : 0,
-  )
   const [savedBriefs, setSavedBriefs] = useState(() => loadBriefHistory())
   const [savedBriefsPanelOpen, setSavedBriefsPanelOpen] = useState(false)
   const [resumePanelOpen, setResumePanelOpen] = useState(false)
@@ -181,6 +130,8 @@ export default function App() {
   const scrollOnStreamRef = useRef(false)
   const streamMdRef = useRef('')
   const resumeInputRef = useRef(null)
+  const demoVideoInputRef = useRef(null)
+  const [demoVideoFile, setDemoVideoFile] = useState(null)
 
   const setResumeFromFileList = useCallback((fileList) => {
     const file = fileList?.[0]
@@ -197,6 +148,17 @@ export default function App() {
     void clearStoredResume()
     setResumeFile(null)
     if (resumeInputRef.current) resumeInputRef.current.value = ''
+  }, [])
+
+  const setDemoVideoFromFileList = useCallback((fileList) => {
+    const file = fileList?.[0]
+    if (!file) return
+    if (!file.type?.startsWith('video/')) {
+      setClientError('Please upload a video file for the homepage demo.')
+      return
+    }
+    setClientError('')
+    setDemoVideoFile(file)
   }, [])
 
   const openSavedBrief = useCallback((entry) => {
@@ -297,17 +259,22 @@ export default function App() {
     return URL.createObjectURL(resumeFile)
   }, [resumeFile])
 
+  const demoVideoUrl = useMemo(() => {
+    if (!demoVideoFile) return null
+    return URL.createObjectURL(demoVideoFile)
+  }, [demoVideoFile])
+
   useEffect(() => {
     return () => {
       if (resumePreviewUrl) URL.revokeObjectURL(resumePreviewUrl)
     }
   }, [resumePreviewUrl])
 
-  const freeUsesRemaining = isTrialCapped
-    ? Math.max(0, FREE_BRIEF_LIMIT - freeUsesConsumed)
-    : null
-  const trialExhausted =
-    isTrialCapped && freeUsesConsumed >= FREE_BRIEF_LIMIT
+  useEffect(() => {
+    return () => {
+      if (demoVideoUrl) URL.revokeObjectURL(demoVideoUrl)
+    }
+  }, [demoVideoUrl])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -328,15 +295,6 @@ export default function App() {
     if (!resumeFile) {
       setClientError(
         'Please upload your resume (PDF or .docx). It is required for every brief.',
-      )
-      return
-    }
-
-    const consumed = readFreeUsesConsumed()
-    if (isTrialCapped && consumed >= FREE_BRIEF_LIMIT) {
-      void logTrialBlockedToServer(trimmedJob, consumed)
-      setClientError(
-        'You have used all free briefs for this browser. Paid access is coming soon.',
       )
       return
     }
@@ -437,11 +395,6 @@ export default function App() {
               sawDone = true
               const totalMs = Math.round(performance.now() - t0)
               setResponseTimeMs(totalMs)
-              if (isTrialCapped) {
-                const next = readFreeUsesConsumed() + 1
-                writeFreeUsesConsumed(next)
-                setFreeUsesConsumed(next)
-              }
               console.log('[prepbrief] stream done', {
                 totalElapsedMs: totalMs,
                 serverElapsedMs: payload.elapsedMs,
@@ -615,25 +568,14 @@ export default function App() {
       <div className="layout-shell">
         <aside className="sidebar" aria-label="Site">
           <Link to="/" className="sidebar-brand">
-            PrepBrief
+            <img
+              src={PREPBRIEF_LOGO_SRC}
+              alt=""
+              className="sidebar-logo"
+              decoding="async"
+            />
+            <span className="visually-hidden">PrepBrief</span>
           </Link>
-          {isTrialCapped && (
-            <span
-              className={
-                trialExhausted
-                  ? 'sidebar-pill sidebar-pill--exhausted'
-                  : 'sidebar-pill'
-              }
-              aria-live="polite"
-            >
-              {trialExhausted
-                ? 'No free briefs left'
-                : `${freeUsesRemaining} free brief${freeUsesRemaining === 1 ? '' : 's'} left`}
-            </span>
-          )}
-          {import.meta.env.DEV && (
-            <span className="sidebar-pill sidebar-pill--dev">Dev · unlimited</span>
-          )}
           <p className="sidebar-nav-label">Navigate</p>
           <nav className="sidebar-nav" aria-label="Main navigation">
             <Link
@@ -738,30 +680,11 @@ export default function App() {
               placeholder="https://jobs.lever.co/… or Greenhouse, Ashby, LinkedIn, etc."
               value={jobUrl}
               onChange={(ev) => setJobUrl(ev.target.value)}
-              disabled={loading || trialExhausted}
+              disabled={loading}
             />
             <p className="field-hint">
               We read the posting to find the employer, then build your company
               brief and role-specific talking points.
-            </p>
-            <p className="uses-remaining" aria-live="polite">
-              {import.meta.env.DEV && !isTrialCapped ? (
-                <span className="uses-remaining--dev">
-                  <em>
-                    Development: unlimited briefs. The {FREE_BRIEF_LIMIT}-brief
-                    limit applies in production builds only.
-                  </em>
-                </span>
-              ) : isTrialCapped && trialExhausted ? (
-                <span className="uses-remaining--exhausted">
-                  No free briefs left on this browser.
-                </span>
-              ) : isTrialCapped ? (
-                <>
-                  <strong>{freeUsesRemaining}</strong> of {FREE_BRIEF_LIMIT}{' '}
-                  free briefs left.
-                </>
-              ) : null}
             </p>
           </div>
 
@@ -776,7 +699,7 @@ export default function App() {
               <button
                 type="button"
                 className="resume-dropzone"
-                disabled={loading || trialExhausted}
+                disabled={loading}
                 aria-labelledby="resume-field-heading"
                 data-active={resumeDragActive ? 'true' : undefined}
                 onClick={() => resumeInputRef.current?.click()}
@@ -823,22 +746,11 @@ export default function App() {
             </div>
           )}
 
-          {trialExhausted && (
-            <div className="paywall-card" role="region" aria-label="Upgrade">
-              <p className="paywall-title">Thanks for trying PrepBrief</p>
-              <p className="paywall-copy">
-                You have used all {FREE_BRIEF_LIMIT} free generations in this
-                browser. We are building paid plans — check back soon or reach
-                out if you want early access.
-          </p>
-        </div>
-          )}
-
           <div className="submit-row">
         <button
               type="submit"
               className="btn-primary"
-              disabled={loading || trialExhausted || !resumeFile}
+              disabled={loading || !resumeFile}
             >
               Generate my brief →
             </button>
@@ -1075,6 +987,61 @@ export default function App() {
                               </p>
                             </article>
                           </div>
+                        </section>
+
+                        <section
+                          className="home-demo-video card"
+                          aria-labelledby="demo-video-heading"
+                        >
+                          <h2 id="demo-video-heading" className="home-demo-heading">
+                            Demo video
+                          </h2>
+                          <p className="home-demo-copy">
+                            Upload a short walkthrough clip to preview how the
+                            product works right on the homepage.
+                          </p>
+                          <input
+                            ref={demoVideoInputRef}
+                            id="demoVideoUpload"
+                            name="demoVideoUpload"
+                            type="file"
+                            accept={DEMO_VIDEO_ACCEPT}
+                            className="resume-file-input"
+                            tabIndex={-1}
+                            onChange={(ev) =>
+                              setDemoVideoFromFileList(ev.target.files)
+                            }
+                          />
+                          <div className="home-demo-actions">
+                            <button
+                              type="button"
+                              className="saved-briefs-close"
+                              onClick={() => demoVideoInputRef.current?.click()}
+                            >
+                              {demoVideoFile ? 'Replace demo video' : 'Upload demo video'}
+                            </button>
+                            {demoVideoFile && (
+                              <span className="home-demo-filename">
+                                {demoVideoFile.name}
+                              </span>
+                            )}
+                          </div>
+                          {demoVideoUrl ? (
+                            <div className="home-demo-player-wrap">
+                              <video
+                                className="home-demo-player"
+                                src={demoVideoUrl}
+                                controls
+                                preload="metadata"
+                              >
+                                Your browser does not support the video tag.
+                              </video>
+                            </div>
+                          ) : (
+                            <p className="home-demo-empty">
+                              No demo video uploaded yet.
+                            </p>
+                          )}
                         </section>
                       </>
                     )}
@@ -1327,7 +1294,15 @@ export default function App() {
         <div className="site-footer-inner">
           <div className="site-footer-top">
             <div className="site-footer-brand-block">
-              <span className="site-footer-brand">PrepBrief</span>
+              <span className="site-footer-brand">
+                <img
+                  src={PREPBRIEF_LOGO_SRC}
+                  alt=""
+                  className="site-footer-logo"
+                  decoding="async"
+                />
+                <span className="visually-hidden">PrepBrief</span>
+              </span>
               <p className="site-footer-blurb">
                 Stop spending an hour on company research. Get interview-ready in 60
                 seconds.

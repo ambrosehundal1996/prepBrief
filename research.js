@@ -5,7 +5,11 @@ const {
   isFirecrawlConfigured,
 } = require("./firecrawlScrape");
 
-const MODEL = "claude-sonnet-4-20250514";
+/** Default Sonnet for brief generation. Override with ANTHROPIC_MODEL in .env */
+const MODEL =
+  (typeof process.env.ANTHROPIC_MODEL === "string" &&
+    process.env.ANTHROPIC_MODEL.trim()) ||
+  "claude-sonnet-4-6";
 const LOG_PREVIEW_CHARS = 2500;
 
 /** Output budget per messages.create / stream segment (long briefs + citations need headroom). */
@@ -330,8 +334,8 @@ function extractTextFromContent(content) {
 function summarizeUsage(usage) {
   if (!usage || typeof usage !== "object") return {};
   const out = {
-    input_tokens: usage.input_tokens,
-    output_tokens: usage.output_tokens,
+    input_tokens: usage.input_tokens ?? usage.inputTokens,
+    output_tokens: usage.output_tokens ?? usage.outputTokens,
   };
   if (usage.server_tool_use?.web_search_requests != null) {
     out.web_search_requests = usage.server_tool_use.web_search_requests;
@@ -350,11 +354,13 @@ function emptyTokenUsageTotals() {
  */
 function accumulateUsage(acc, usage) {
   if (!usage || typeof usage !== "object") return;
-  if (typeof usage.input_tokens === "number") {
-    acc.input_tokens += usage.input_tokens;
+  const inT = usage.input_tokens ?? usage.inputTokens;
+  const outT = usage.output_tokens ?? usage.outputTokens;
+  if (typeof inT === "number" && Number.isFinite(inT)) {
+    acc.input_tokens += inT;
   }
-  if (typeof usage.output_tokens === "number") {
-    acc.output_tokens += usage.output_tokens;
+  if (typeof outT === "number" && Number.isFinite(outT)) {
+    acc.output_tokens += outT;
   }
   const w = usage.server_tool_use?.web_search_requests;
   if (typeof w === "number") {

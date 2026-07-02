@@ -192,43 +192,6 @@ app.get("/health", sendHealth);
 /** Same handler under /api for unified Vercel deploy (SPA rewrite keeps /health on index.html). */
 app.get("/api/health", sendHealth);
 
-/**
- * Client-only trial block logging (no Anthropic call). Optional body:
- * { jobUrl?, freeUsesUsed?: number }
- */
-app.post("/api/log-client-event", (req, res) => {
-  const reqId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  const jobUrl =
-    typeof req.body?.jobUrl === "string" ? req.body.jobUrl.trim() : "";
-  const freeUsesUsed = Number(req.body?.freeUsesUsed);
-  const used =
-    Number.isFinite(freeUsesUsed) && freeUsesUsed >= 0
-      ? Math.min(99, Math.floor(freeUsesUsed))
-      : "";
-
-  logFromRequest(req, {
-    requestId: reqId,
-    endpoint: "/api/log-client-event",
-    eventType: "trial_blocked",
-    jobUrl,
-    companyUrl: "",
-    httpStatus: 200,
-    errorCode: "CLIENT_TRIAL_CAP",
-    errorMessage:
-      used !== ""
-        ? `Free trial uses exhausted (${used} used).`
-        : "Free trial uses exhausted.",
-    anthropicModel: "",
-    elapsedMs: "",
-    responseTruncated: false,
-    responseMarkdown: "",
-    ...tokenFieldsForSheet(undefined),
-    ...sheetResumeFields({ attached: false }, null),
-  });
-
-  res.json({ ok: true, logged: isSheetsConfigured() });
-});
-
 app.post("/api/research", withResumeUpload, async (req, res) => {
   const reqId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -543,7 +506,7 @@ function startServer() {
   app.listen(PORT, () => {
     console.log(`Server listening on http://localhost:${PORT}`);
     console.log(
-      "API: GET /health, GET /api/health, POST /api/research, POST /api/research/stream, POST /api/log-client-event",
+      "API: GET /health, GET /api/health, POST /api/research, POST /api/research/stream",
     );
     if (isSheetsConfigured()) {
       console.log("[sheets] Usage logging to Google Sheets is enabled.");

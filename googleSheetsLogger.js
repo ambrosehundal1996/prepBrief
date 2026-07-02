@@ -174,72 +174,106 @@ function userAgent(req) {
 }
 
 /**
+ * Sheet row shape (7 columns: requestId, timestamp, jobUrl, resume, response,
+ * inputTokens, outputTokens). Extra keys on `row` are ignored.
+ *
  * @param {object} row
- * @param {string} row.timestampIso
  * @param {string} row.requestId
- * @param {string} row.endpoint
- * @param {string} row.eventType
+ * @param {string} row.timestampIso
  * @param {string} [row.jobUrl]
- * @param {string} [row.companyUrl]
- * @param {string} [row.clientIp]
- * @param {string} [row.userAgent]
- * @param {number|string} [row.httpStatus]
- * @param {string} [row.errorCode]
- * @param {string} [row.errorMessage]
- * @param {string} [row.anthropicModel]
- * @param {number|string} [row.elapsedMs]
+ * @param {string} [row.resumeParsedText]
+ * @param {string} [row.responseMarkdown]
+ * @param {string} [row.errorMessage] used when responseMarkdown is empty (e.g. errors)
  * @param {number|string} [row.inputTokens]
  * @param {number|string} [row.outputTokens]
- * @param {number|string} [row.webSearchRequests]
- * @param {boolean} [row.responseTruncated]
- * @param {string} [row.responseMarkdown]
- * @param {string} [row.resumeAttached] "yes" | "no"
- * @param {number|string} [row.resumeChars]
- * @param {string} [row.resumeParsedText] extracted resume plain text (truncated in-sheet)
  */
 
-/** Avoid Google Sheets interpreting cell as formula (= + - @). */
-function sheetsSafeCell(value) {
-  const s = value == null ? "" : String(value);
-  if (/^[=+\-@]/.test(s)) return `'${s}`;
+/**
+ * Coerce any logged field to a single flat string (never a nested array for the API).
+ */
+function oneCellString(value) {
+  if (value == null) return "";
+  if (Array.isArray(value)) {
+    return value
+      .flat(Infinity)
+      .map((v) => (v == null ? "" : String(v)))
+      .join("\n");
+  }
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
+/**
+ * Normalize whitespace / control chars that confuse Sheets or CSV export.
+ */
+function sheetsPlainTextCell(value) {
+  let s = oneCellString(value);
+  s = s.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  s = s.replace(/\0/g, "");
+  s = s.replace(/[\t\v\f\u0085\u2028\u2029]/g, " ");
   return s;
 }
 
-function buildRowArray(row) {
-  let md = row.responseMarkdown ?? "";
-  let truncated = Boolean(row.responseTruncated);
-  if (md.length > MAX_CELL_CHARS) {
-    md = md.slice(0, MAX_CELL_CHARS) + "\n\n[… truncated for Google Sheets cell limit …]";
-    truncated = true;
+/**
+ * USER_ENTERED value that always stays one text cell. Leading `'` tells Sheets to
+ * treat the cell as text so lines starting with `-`, `+`, `=`, `@`, or digit
+ * (common in resumes) are not parsed as formulas or numbers.
+ * Internal single quotes are doubled per Sheets rules.
+ */
+function sheetsUserEnteredText(value) {
+  const t = sheetsPlainTextCell(value);
+  if (t === "") return "";
+  return `'${t.replace(/'/g, "''")}`;
+}
+
+function tokenCountForSheet(v) {
+  if (v == null || v === "") return "";
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number(v);
+    if (Number.isFinite(n)) return String(n);
   }
-  let resumeParsed = row.resumeParsedText ?? "";
+  return "";
+}
+
+function buildRowArray(row) {
+  let resumeParsed = sheetsPlainTextCell(row.resumeParsedText ?? "");
   if (resumeParsed.length > MAX_CELL_CHARS) {
     resumeParsed =
       resumeParsed.slice(0, MAX_CELL_CHARS) +
       "\n\n[… resume truncated for Google Sheets cell limit …]";
   }
+
+  const md = sheetsPlainTextCell((row.responseMarkdown ?? "").trim());
+  const err = sheetsPlainTextCell((row.errorMessage ?? "").trim());
+  let response = md || err;
+  if (response.length > MAX_CELL_CHARS) {
+    response =
+      response.slice(0, MAX_CELL_CHARS) +
+      "\n\n[… truncated for Google Sheets cell limit …]";
+  }
+
+  const inTok = tokenCountForSheet(
+    row.inputTokens ?? row.input_tokens,
+  );
+  const outTok = tokenCountForSheet(
+    row.outputTokens ?? row.output_tokens,
+  );
+
   return [
-    sheetsSafeCell(row.timestampIso),
-    sheetsSafeCell(row.requestId),
-    sheetsSafeCell(row.endpoint),
-    sheetsSafeCell(row.eventType),
-    sheetsSafeCell(row.jobUrl ?? ""),
-    sheetsSafeCell(row.companyUrl ?? ""),
-    sheetsSafeCell(row.clientIp ?? ""),
-    sheetsSafeCell(row.userAgent ?? ""),
-    sheetsSafeCell(row.httpStatus ?? ""),
-    sheetsSafeCell(row.errorCode ?? ""),
-    sheetsSafeCell(row.errorMessage ?? ""),
-    sheetsSafeCell(row.anthropicModel ?? ""),
-    sheetsSafeCell(row.elapsedMs ?? ""),
-    sheetsSafeCell(row.inputTokens ?? ""),
-    sheetsSafeCell(row.outputTokens ?? ""),
-    sheetsSafeCell(row.webSearchRequests ?? ""),
-    truncated ? "true" : "false",
-    sheetsSafeCell(md),
-    sheetsSafeCell(row.resumeAttached ?? ""),
-    sheetsSafeCell(row.resumeChars ?? ""),
-    sheetsSafeCell(resumeParsed),
+    sheetsUserEnteredText(row.requestId ?? ""),
+    sheetsUserEnteredText(row.timestampIso ?? ""),
+    sheetsUserEnteredText(row.jobUrl ?? ""),
+    sheetsUserEnteredText(resumeParsed),
+    sheetsUserEnteredText(response),
+    inTok,
+    outTok,
   ];
 }
 
@@ -252,11 +286,16 @@ async function appendRowInternal(row) {
 
   const auth = await getSheetsAuth();
   const sheets = google.sheets({ version: "v4", auth });
-  const range = `${tab}!A:U`;
+  const range = `${tab}!A:G`;
 
   await sheets.spreadsheets.values.append({
     spreadsheetId,
     range,
+    /**
+     * USER_ENTERED + leading apostrophe on text columns (see sheetsUserEnteredText)
+     * keeps resume/body text in a single cell; resumes often start with `-` / `+` /
+     * digits which RAW/Sheets can still treat oddly in some cases.
+     */
     valueInputOption: "USER_ENTERED",
     insertDataOption: "INSERT_ROWS",
     requestBody: {
@@ -298,24 +337,28 @@ function appendUsageLog(row) {
 function logFromRequest(req, extra) {
   appendUsageLog({
     timestampIso: new Date().toISOString(),
-    clientIp: clientIp(req),
-    userAgent: userAgent(req),
     ...extra,
   });
 }
 
 /**
- * @param {{ input_tokens?: number, output_tokens?: number, web_search_requests?: number } | undefined} u
+ * @param {{ input_tokens?: unknown, output_tokens?: unknown, inputTokens?: unknown, outputTokens?: unknown, usage?: object, web_search_requests?: number } | undefined} u
  */
 function tokenFieldsForSheet(u) {
   if (!u || typeof u !== "object") {
     return { inputTokens: "", outputTokens: "", webSearchRequests: "" };
   }
+  const src =
+    u.usage && typeof u.usage === "object" ? u.usage : u;
+  const inRaw =
+    src.input_tokens ?? src.inputTokens ?? u.input_tokens ?? u.inputTokens;
+  const outRaw =
+    src.output_tokens ?? src.outputTokens ?? u.output_tokens ?? u.outputTokens;
+  const inStr = tokenCountForSheet(inRaw);
+  const outStr = tokenCountForSheet(outRaw);
   return {
-    inputTokens:
-      typeof u.input_tokens === "number" ? u.input_tokens : "",
-    outputTokens:
-      typeof u.output_tokens === "number" ? u.output_tokens : "",
+    inputTokens: inStr,
+    outputTokens: outStr,
     webSearchRequests:
       typeof u.web_search_requests === "number"
         ? u.web_search_requests
