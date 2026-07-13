@@ -10,7 +10,7 @@ const tiers = [
       'Unlimited briefs',
       'Company research sections',
       'Predicted interview questions',
-      'Why I’m interested talking points',
+      'Why us talking points',
     ],
     cta: 'Get started free',
     ctaTo: '/#create-brief',

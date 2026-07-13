@@ -1,57 +1,35 @@
 const { Anthropic } = require("@anthropic-ai/sdk");
-const { RESEARCH_SYSTEM_PROMPT } = require("./researchPrompt");
+const { BRIEF_PROMPT } = require("./prompts");
 const {
   scrapeJobPostingUrl,
   isFirecrawlConfigured,
 } = require("./firecrawlScrape");
+const {
+  extractCompanyIdentity,
+  runStage1,
+  normalizeDomain,
+} = require("./companyResearch");
+const { getFreshResearch, upsertResearch } = require("./researchCache");
 
-/** Default Sonnet for brief generation. Override with ANTHROPIC_MODEL in .env */
+/** Stage 2 (brief writer) model. Override with ANTHROPIC_MODEL in .env */
 const MODEL =
   (typeof process.env.ANTHROPIC_MODEL === "string" &&
     process.env.ANTHROPIC_MODEL.trim()) ||
   "claude-sonnet-4-6";
-const LOG_PREVIEW_CHARS = 2500;
 
-/** Output budget per messages.create / stream segment (long briefs + citations need headroom). */
+/** Stage 2 output budget — the brief itself, no tool loops. */
 const MAX_TOKENS = Math.min(
   64_000,
   Math.max(
-    2048,
-    Number.parseInt(process.env.RESEARCH_MAX_OUTPUT_TOKENS || "8192", 10) || 8192,
+    1024,
+    Number.parseInt(process.env.RESEARCH_MAX_OUTPUT_TOKENS || "4000", 10) ||
+      4000,
   ),
 );
 
-/**
- * Web search can return stop_reason pause_turn many times; each continuation is a new request.
- * Hitting this cap surfaces PAUSE_TURN_LIMIT; too-low values feel like a "max turn" cutoff.
- */
-const MAX_PAUSE_CONTINUATIONS = Math.min(
-  80,
-  Math.max(
-    1,
-    Number.parseInt(process.env.RESEARCH_MAX_PAUSE_CONTINUATIONS || "32", 10) ||
-      32,
-  ),
-);
+const INTERVIEW_STAGE = "hiring_manager";
 
-function webSearchTools() {
-  const maxUses = Math.min(
-    30,
-    Math.max(
-      1,
-      Number.parseInt(process.env.RESEARCH_WEB_SEARCH_MAX_USES || "15", 10) || 15,
-    ),
-  );
-  return [
-    {
-      type: "web_search_20250305",
-      name: "web_search",
-      max_uses: maxUses,
-    },
-  ];
-}
-
-/** Retries per API call (streaming segment or messages.create turn). */
+/** Retries per Anthropic API call. */
 const MAX_ANTHROPIC_RETRIES = Math.min(
   10,
   Math.max(
@@ -129,7 +107,8 @@ async function messagesCreateWithRetry(client, params) {
         attempt,
         nextDelayMs: delay,
         error:
-          e instanceof Error            ? e.message
+          e instanceof Error
+            ? e.message
             : String(/** @type {object} */ (e)?.type || e),
       });
       await sleep(delay);
@@ -140,142 +119,7 @@ async function messagesCreateWithRetry(client, params) {
     : new Error("Anthropic request failed after retries.");
 }
 
-function buildUserMessage({
-  companyUrl,
-  jobUrl,
-  jobDescriptionText,
-} = {}) {
-  const jdText =
-    typeof jobDescriptionText === "string" ? jobDescriptionText.trim() : "";
-  const hasPastedJd = jdText.length > 0;
-  const jobUrlTrimmed =
-    typeof jobUrl === "string" ? jobUrl.trim() : "";
-  const hasJobUrl = jobUrlTrimmed.length > 0;
-  const companyTrimmed =
-    typeof companyUrl === "string" ? companyUrl.trim() : "";
-  const hasCompany = companyTrimmed.length > 0;
-
-  let text = `[SOURCE: web_research]
-
-Research the company for an interview candidate using web search.
-
-`;
-
-  if (hasJobUrl && !hasPastedJd) {
-    text += `The candidate provided a **job posting URL only** (no separate company website field is required):
-${jobUrlTrimmed}
-
-Workflow:
-1. Use web search to open and read this job posting in full.
-2. Identify the **employer** (company name) and any links in the posting to the company website, product, careers, or "About" pages.
-3. Use web search to research **that employer** for the brief — start from the official site when you find it, then other reputable sources.
-4. If the employer is unclear or the posting is for a third-party recruiter, say so briefly and infer the hiring company only when reasonable.
-
-Always include the "## Interview Positioning" section — you have the job posting from the URL above.
-`;
-    if (hasCompany) {
-      text += `
-Optional: the user also supplied this company website — verify it matches the employer before treating it as authoritative:
-${companyTrimmed}
-`;
-    }
-  } else if (hasPastedJd) {
-    text += `The candidate **pasted** the job description below (there is no job posting URL). Use this text only for the role details — do not assume a URL exists.
-
---- Job description (pasted) ---
-${jdText}
---- End job description ---
-
-Identify the employer from the text, then use web search to research that company. Include "## Interview Positioning" using the pasted JD.
-`;
-    if (hasCompany) {
-      text += `
-Optional company website from user (verify against employer): ${companyTrimmed}
-`;
-    }
-  } else if (hasCompany) {
-    text += `Company website (primary anchor):
-${companyTrimmed}
-
-No job posting URL or pasted JD was provided — omit the "## Interview Positioning" section entirely.
-`;
-  }
-
-  text += `
-Use web search when helpful to verify facts that change over time. Prefer primary and reputable sources. If something cannot be verified, say so briefly instead of guessing.
-
-Output only the markdown brief (no preamble). Follow the exact section headers and structure from your system instructions.`;
-
-  return text;
-}
-
-/**
- * Append extracted resume text to the user message when present.
- * @param {string} userContent
- * @param {string | null | undefined} resumeText
- */
-function appendResumeToPrompt(userContent, resumeText) {
-  const base =
-    typeof userContent === "string" ? userContent.trimEnd() : "";
-  const r =
-    typeof resumeText === "string" ? resumeText.trim() : "";
-  if (!r) return base;
-  return `${base}
-
-The user also provided their **resume** as extracted text below. Cross-reference it with the job description or posting for JD-specific sections. Use only facts stated in the resume; do not invent employers, titles, dates, or metrics.
-
---- Candidate resume (extracted text) ---
-${r}
---- End resume ---`;
-}
-
-function compactPreview(text, max = LOG_PREVIEW_CHARS) {
-  if (typeof text !== "string" || !text.trim()) return "";
-  const compact = text.replace(/\s+/g, " ").trim();
-  if (compact.length <= max) return compact;
-  return `${compact.slice(0, max)} …[truncated ${compact.length - max} chars]`;
-}
-
-/**
- * User message when the job posting body was scraped (Firecrawl) — model must not use web search.
- */
-function buildUserMessageSingleSource({
-  companyUrl,
-  jobUrl,
-  jobMarkdown,
-} = {}) {
-  const jobUrlTrimmed =
-    typeof jobUrl === "string" ? jobUrl.trim() : "";
-  const md =
-    typeof jobMarkdown === "string" ? jobMarkdown.trim() : "";
-  const companyTrimmed =
-    typeof companyUrl === "string" ? companyUrl.trim() : "";
-  const hasCompany = companyTrimmed.length > 0;
-
-  let text = `[SOURCE: job_markdown]
-
-Below is the **full job posting** scraped as markdown from this URL (your only source — do not use web search):
-${jobUrlTrimmed}
-
-`;
-
-  if (hasCompany) {
-    text += `Optional company website from the user (verify against the posting; you cannot browse it):
-${companyTrimmed}
-
-`;
-  }
-
-  text += `--- Job posting (markdown) ---
-${md}
---- End job posting ---
-
-Output only the markdown brief (no preamble). Follow the exact section headers and structure from your system instructions.`;
-
-  return text;
-}
-
-/** Job-URL-only flow: attempt Firecrawl scrape before Claude (no pasted JD). */
+/** Job-URL-only flow: attempt Firecrawl scrape before the pipeline (no pasted JD). */
 async function maybeScrapeJobWithFirecrawl({ jobUrl, jobDescriptionText }) {
   const jd =
     typeof jobDescriptionText === "string" ? jobDescriptionText.trim() : "";
@@ -285,20 +129,16 @@ async function maybeScrapeJobWithFirecrawl({ jobUrl, jobDescriptionText }) {
 
   const fc = await scrapeJobPostingUrl(ju);
   if (!fc.ok || !fc.markdown) {
-    console.warn("[research] Firecrawl scrape failed — falling back to web search", {
+    console.warn("[research] Firecrawl scrape failed", {
       error: fc.error,
     });
     return { markdown: null, error: fc.error || "unknown" };
   }
 
-  console.log("[research] Firecrawl single-source path", {
+  console.log("[research] Firecrawl scrape ok", {
     markdownChars: fc.markdown.length,
     truncated: Boolean(fc.truncated),
   });
-  console.log(
-    "[research] Firecrawl markdown preview:",
-    compactPreview(fc.markdown),
-  );
   return { markdown: fc.markdown, error: null };
 }
 
@@ -343,7 +183,7 @@ function summarizeUsage(usage) {
   return out;
 }
 
-/** Running totals across multi-turn / streaming segments. */
+/** Running totals across Stage 1 + Stage 2 calls. */
 function emptyTokenUsageTotals() {
   return { input_tokens: 0, output_tokens: 0, web_search_requests: 0 };
 }
@@ -368,6 +208,151 @@ function accumulateUsage(acc, usage) {
   }
 }
 
+/** Stage 1 search index (1-4) → SSE phase name for client narration. */
+const STAGE1_SEARCH_PHASES = [
+  "research_news",
+  "research_exec",
+  "research_hiring",
+  "research_extra",
+];
+
+class PipelineError extends Error {
+  constructor(message, code) {
+    super(message);
+    this.code = code;
+  }
+}
+
+/**
+ * Shared two-stage front half: scrape → identity → cache → Stage 1 → upsert.
+ * Returns everything Stage 2 needs. Throws PipelineError on unrecoverable input problems.
+ *
+ * @param {object} opts
+ * @param {import('@anthropic-ai/sdk').Anthropic} opts.client
+ * @param {string} [opts.companyUrl]
+ * @param {string} [opts.jobUrl]
+ * @param {string} [opts.jobDescriptionText]
+ * @param {(phase: string) => void} opts.emitPhase
+ * @param {ReturnType<emptyTokenUsageTotals>} opts.tokenUsage mutated with Stage 1 usage
+ * @returns {Promise<{ research: object, jdContent: string, companyName: string, domain: string, cacheHit: boolean }>}
+ */
+async function prepareResearch({
+  client,
+  companyUrl,
+  jobUrl,
+  jobDescriptionText,
+  emitPhase,
+  tokenUsage,
+}) {
+  const pastedJd =
+    typeof jobDescriptionText === "string" ? jobDescriptionText.trim() : "";
+  const hasJobUrl = Boolean(typeof jobUrl === "string" && jobUrl.trim());
+
+  // 1) JD content: pasted text wins; else Firecrawl scrape of the job URL.
+  let jdContent = pastedJd;
+  if (!jdContent && hasJobUrl) {
+    emitPhase("scraping_jd");
+    const { markdown, error } = await maybeScrapeJobWithFirecrawl({
+      jobUrl,
+      jobDescriptionText,
+    });
+    if (markdown) {
+      jdContent = markdown;
+    } else {
+      throw new PipelineError(
+        "We couldn't read that job posting URL. Paste the job description text instead and try again.",
+        "SCRAPE_FAILED",
+      );
+    }
+  }
+
+  // 2) Company identity (name + domain) — needed before the cache lookup
+  //    because postings live on lever/greenhouse/linkedin domains.
+  emitPhase("identifying_company");
+  let companyName = "";
+  let domain = "";
+  if (jdContent) {
+    const identity = await extractCompanyIdentity(client, {
+      jdScrape: jdContent,
+      jobUrl,
+      companyUrl,
+    });
+    accumulateUsage(tokenUsage, identity.usage);
+    companyName = identity.companyName;
+    domain = identity.domain;
+  }
+  if (!domain && companyUrl) domain = normalizeDomain(companyUrl);
+  if (!companyName && domain) companyName = domain.split(".")[0];
+
+  const isoDate = new Date().toISOString().slice(0, 10);
+
+  // 3) Cache lookup (10-day freshness) → Stage 1 on miss → upsert.
+  const cached = domain ? await getFreshResearch(domain) : null;
+  if (cached) {
+    return {
+      research: cached.research,
+      jdContent,
+      companyName: cached.companyName || companyName,
+      domain,
+      cacheHit: true,
+    };
+  }
+
+  const stage1 = await runStage1(client, {
+    companyName,
+    domain,
+    isoDate,
+    jdScrapeExcerpt: jdContent,
+    onSearch: (searchIndex) => {
+      const phase =
+        STAGE1_SEARCH_PHASES[
+          Math.min(searchIndex, STAGE1_SEARCH_PHASES.length) - 1
+        ];
+      if (phase) emitPhase(phase);
+    },
+  });
+  accumulateUsage(tokenUsage, stage1.usage);
+
+  if (domain && !stage1.usedFallback) {
+    await upsertResearch(domain, companyName, stage1.research);
+  }
+
+  return {
+    research: stage1.research,
+    jdContent,
+    companyName,
+    domain,
+    cacheHit: false,
+  };
+}
+
+/** Stage 2 system blocks: brief prompt with prompt caching. */
+function stage2System() {
+  return [
+    {
+      type: "text",
+      text: BRIEF_PROMPT.replace("{{INTERVIEW_STAGE}}", INTERVIEW_STAGE),
+      cache_control: { type: "ephemeral" },
+    },
+  ];
+}
+
+/** Stage 2 user message per spec. */
+function stage2UserMessage({ research, jdContent, resumeText }) {
+  const resume =
+    typeof resumeText === "string" && resumeText.trim()
+      ? resumeText.trim()
+      : "not provided";
+  return `RESEARCH OBJECT:
+${JSON.stringify(research, null, 2)}
+
+JOB DESCRIPTION (scraped):
+${jdContent || "not provided"}
+
+RESUME:
+${resume}`;
+}
+
 function logMessageStep(label, response) {
   const types = Array.isArray(response.content)
     ? response.content.map((b) => b.type).join(", ")
@@ -379,43 +364,11 @@ function logMessageStep(label, response) {
     usage: summarizeUsage(response.usage),
     block_types: types,
   });
-
-  if (!Array.isArray(response.content)) return;
-
-  for (let i = 0; i < response.content.length; i += 1) {
-    const block = response.content[i];
-    if (block.type === "text" && typeof block.text === "string") {
-      const preview = block.text.slice(0, 100).replace(/\s+/g, " ");
-      console.log(
-        `[research]   block[${i}] text (${block.text.length} chars): ${preview}${
-          block.text.length > 100 ? "…" : ""
-        }`,
-      );
-    } else if (block.type === "server_tool_use") {
-      console.log(`[research]   block[${i}] server_tool_use`, {
-        name: block.name,
-        input: block.input,
-      });
-    } else if (block.type === "web_search_tool_result") {
-      const c = block.content;
-      const isErr =
-        c && typeof c === "object" && c.type === "web_search_tool_result_error";
-      console.log(`[research]   block[${i}] web_search_tool_result`, {
-        tool_use_id: block.tool_use_id,
-        error: isErr ? c.error_code : undefined,
-        result_items: Array.isArray(c)
-          ? c.length
-          : c && !isErr
-            ? "object"
-            : 0,
-      });
-    } else {
-      console.log(`[research]   block[${i}]`, block.type);
-    }
-  }
 }
 
 /**
+ * Non-streaming two-stage brief generation (used by /api/research).
+ *
  * @param {object} opts
  * @param {string} [opts.companyUrl] optional hint when user supplies it
  * @param {string} [opts.jobUrl]
@@ -436,20 +389,14 @@ async function generateBrief({
 
   console.log("[research] generateBrief start", {
     companyHost,
-    hasOptionalCompanyUrl: Boolean(
-      typeof companyUrl === "string" && companyUrl.trim(),
-    ),
     hasJobUrl: Boolean(jobUrl),
     hasJobDescriptionText: Boolean(
       typeof jobDescriptionText === "string" && jobDescriptionText.trim(),
     ),
     hasResume,
-    resumeChars: hasResume ? resumeText.trim().length : 0,
     firecrawlConfigured: isFirecrawlConfigured(),
     model: MODEL,
     max_tokens: MAX_TOKENS,
-    web_search_max_uses: webSearchTools()[0]?.max_uses,
-    max_pause_continuations: MAX_PAUSE_CONTINUATIONS,
   });
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -460,83 +407,43 @@ async function generateBrief({
   }
 
   const client = new Anthropic({ apiKey });
-  const { markdown: firecrawlMarkdown } = await maybeScrapeJobWithFirecrawl({
+  const tokenUsage = emptyTokenUsageTotals();
+
+  const prepared = await prepareResearch({
+    client,
+    companyUrl,
     jobUrl,
     jobDescriptionText,
+    emitPhase: (phase) => console.log("[research] phase:", phase),
+    tokenUsage,
   });
-  const useSingleSource = Boolean(firecrawlMarkdown);
-  let userContent = useSingleSource
-    ? buildUserMessageSingleSource({
-        companyUrl,
-        jobUrl,
-        jobMarkdown: firecrawlMarkdown,
-      })
-    : buildUserMessage({
-        companyUrl,
-        jobUrl,
-        jobDescriptionText,
-      });
-  userContent = appendResumeToPrompt(userContent, resumeText);
 
-  console.log("[research] prompt mode", {
-    mode: useSingleSource ? "single_source_firecrawl" : "web_search",
-    userContentChars: userContent.length,
+  console.log("[research] Stage 2 (create) …", {
+    cacheHit: prepared.cacheHit,
+    company: prepared.companyName,
+    domain: prepared.domain,
   });
-  console.log("[research] user prompt preview:", compactPreview(userContent));
 
-  const baseParams = {
+  const response = await messagesCreateWithRetry(client, {
     model: MODEL,
     max_tokens: MAX_TOKENS,
-    system: RESEARCH_SYSTEM_PROMPT,
-    ...(useSingleSource ? {} : { tools: webSearchTools() }),
-  };
-
-  const messages = [{ role: "user", content: userContent }];
-
-  console.log("[research] messages.create (initial turn) …");
-  let response = await messagesCreateWithRetry(client, {
-    ...baseParams,
-    messages,
+    system: stage2System(),
+    messages: [
+      {
+        role: "user",
+        content: stage2UserMessage({
+          research: prepared.research,
+          jdContent: prepared.jdContent,
+          resumeText,
+        }),
+      },
+    ],
   });
-  logMessageStep("initial response", response);
-
-  const tokenUsage = emptyTokenUsageTotals();
+  logMessageStep("stage2 response", response);
   accumulateUsage(tokenUsage, response.usage);
-
-  let continuations = 0;
-  while (
-    response.stop_reason === "pause_turn" &&
-    continuations < MAX_PAUSE_CONTINUATIONS
-  ) {
-    continuations += 1;
-    console.log(
-      `[research] stop_reason=pause_turn → continuation ${continuations}/${MAX_PAUSE_CONTINUATIONS} (appending assistant content, calling messages.create again) …`,
-    );
-    messages.push({ role: "assistant", content: response.content });
-    response = await messagesCreateWithRetry(client, {
-      ...baseParams,
-      messages,
-    });
-    logMessageStep(`continuation #${continuations} response`, response);
-    accumulateUsage(tokenUsage, response.usage);
-  }
-
-  if (response.stop_reason === "pause_turn") {
-    console.error(
-      "[research] still pause_turn after max continuations — failing",
-    );
-    const err = new Error(
-      "Research paused without completing; increase RESEARCH_MAX_PAUSE_CONTINUATIONS or retry.",
-    );
-    err.code = "PAUSE_TURN_LIMIT";
-    throw err;
-  }
-
-  console.log("[research] final stop_reason:", response.stop_reason);
 
   const markdown = extractTextFromContent(response.content);
   if (!markdown) {
-    console.error("[research] no text blocks in final content");
     const err = new Error("The model returned no text output.");
     err.code = "EMPTY_OUTPUT";
     throw err;
@@ -556,12 +463,9 @@ function writeSse(res, payload) {
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
-function cloneMessagesForApi(messages) {
-  return JSON.parse(JSON.stringify(messages));
-}
-
 /**
- * Stream markdown deltas to the client as SSE (data: JSON lines).
+ * Stream a two-stage brief to the client as SSE (data: JSON lines).
+ * Emits `phase` events for narration, then `text` deltas from Stage 2.
  * Caller must set SSE headers before calling. Does not call res.end().
  *
  * @param {import('express').Request} req
@@ -582,9 +486,6 @@ async function streamResearchBrief(req, res, {
 
   console.log("[research] streamResearchBrief start", {
     companyHost,
-    hasOptionalCompanyUrl: Boolean(
-      typeof companyUrl === "string" && companyUrl.trim(),
-    ),
     hasJobUrl: Boolean(jobUrl),
     hasJobDescriptionText: Boolean(
       typeof jobDescriptionText === "string" && jobDescriptionText.trim(),
@@ -594,8 +495,6 @@ async function streamResearchBrief(req, res, {
     firecrawlConfigured: isFirecrawlConfigured(),
     model: MODEL,
     max_tokens: MAX_TOKENS,
-    web_search_max_uses: webSearchTools()[0]?.max_uses,
-    max_pause_continuations: MAX_PAUSE_CONTINUATIONS,
   });
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -606,42 +505,8 @@ async function streamResearchBrief(req, res, {
   }
 
   const client = new Anthropic({ apiKey });
-  const { markdown: firecrawlMarkdown } = await maybeScrapeJobWithFirecrawl({
-    jobUrl,
-    jobDescriptionText,
-  });
-  const useSingleSource = Boolean(firecrawlMarkdown);
-  let userContent = useSingleSource
-    ? buildUserMessageSingleSource({
-        companyUrl,
-        jobUrl,
-        jobMarkdown: firecrawlMarkdown,
-      })
-    : buildUserMessage({
-        companyUrl,
-        jobUrl,
-        jobDescriptionText,
-      });
-  userContent = appendResumeToPrompt(userContent, resumeText);
+  const tokenUsageTotals = emptyTokenUsageTotals();
 
-  console.log("[research] stream prompt mode", {
-    mode: useSingleSource ? "single_source_firecrawl" : "web_search",
-    userContentChars: userContent.length,
-  });
-  console.log(
-    "[research] stream user prompt preview:",
-    compactPreview(userContent),
-  );
-
-  const baseParams = {
-    model: MODEL,
-    max_tokens: MAX_TOKENS,
-    system: RESEARCH_SYSTEM_PROMPT,
-    ...(useSingleSource ? {} : { tools: webSearchTools() }),
-  };
-
-  let messages = [{ role: "user", content: userContent }];
-  let continuations = 0;
   /** @type {import('@anthropic-ai/sdk').MessageStream | null} */
   let activeStream = null;
 
@@ -660,175 +525,187 @@ async function streamResearchBrief(req, res, {
   };
   res.once("close", onResponseClose);
 
-  const tokenUsageTotals = emptyTokenUsageTotals();
-
   try {
-    while (true) {
-      let final;
-      /** @type {import('@anthropic-ai/sdk').MessageStream | null} */
-      let stream = null;
-      let streamAttempt = 0;
-
-      while (streamAttempt < MAX_ANTHROPIC_RETRIES) {
-        streamAttempt += 1;
-        let emittedTextThisAttempt = false;
-
-        stream = client.messages.stream({
-          ...baseParams,
-          messages,
-        });
-        activeStream = stream;
-
-        stream.on("text", (delta) => {
-          if (delta) {
-            emittedTextThisAttempt = true;
-            writeSse(res, { type: "text", text: delta });
-          }
-        });
-
-        try {
-          final = await stream.finalMessage();
-          activeStream = null;
-          break;
-        } catch (streamErr) {
-          activeStream = null;
-          try {
-            stream.abort();
-          } catch {
-            /* ignore */
-          }
-
-          const canRetry =
-            isRetriableAnthropicError(streamErr) &&
-            !emittedTextThisAttempt &&
-            streamAttempt < MAX_ANTHROPIC_RETRIES;
-
-          if (canRetry) {
-            const delay = anthropicRetryDelayMs(streamAttempt);
-            console.warn(
-              "[research] Anthropic stream retriable error; retrying segment",
-              {
-                streamAttempt,
-                maxAttempts: MAX_ANTHROPIC_RETRIES,
-                delayMs: delay,
-                error:
-                  streamErr instanceof Error
-                    ? streamErr.message
-                    : String(streamErr),
-              },
-            );
-            writeSse(res, { type: "phase", phase: "model_retry" });
-            await sleep(delay);
-            continue;
-          }
-
-          console.error("[research] stream segment failed", streamErr);
-          const msg =
-            streamErr instanceof Error
-              ? streamErr.message
-              : "Stream failed before completion.";
-          if (/stream ended|without producing|prematurely/i.test(msg)) {
-            console.error(
-              "[research] Incomplete SSE often means the host cut the connection (e.g. Vercel maxDuration) or the API closed early. Try a higher functions.maxDuration (Pro) or a shorter brief path (Firecrawl).",
-            );
-          }
-          writeSse(res, {
-            type: "error",
-            message: msg,
-          });
-          return {
-            ok: false,
-            errorMessage: msg,
-            elapsedMs: Date.now() - t0,
-            tokenUsage: tokenUsageTotals,
-          };
-        }
-      }
-
-      if (!final || !stream) {
-        const fallback =
-          "The AI service is busy. Please try again in a few seconds.";
-        console.error("[research] stream segment exhausted retries");
-        writeSse(res, { type: "error", message: fallback });
-        return {
-          ok: false,
-          errorMessage: fallback,
-          elapsedMs: Date.now() - t0,
-          tokenUsage: tokenUsageTotals,
-        };
-      }
-
-      logMessageStep(
-        continuations === 0 ? "stream initial response" : `stream continuation #${continuations}`,
-        final,
-      );
-
-      accumulateUsage(tokenUsageTotals, final.usage);
-
-      if (final.stop_reason !== "pause_turn") {
-        const markdown = extractTextFromContent(final.content);
-        if (!markdown) {
-          writeSse(res, {
-            type: "error",
-            code: "EMPTY_OUTPUT",
-            message: "The model returned no text for the brief.",
-          });
-          console.log("[research] streamResearchBrief done", {
-            markdownChars: 0,
-            elapsedMs: Date.now() - t0,
-            stop_reason: final.stop_reason,
-          });
-          return {
-            ok: false,
-            errorCode: "EMPTY_OUTPUT",
-            errorMessage: "The model returned no text for the brief.",
-            elapsedMs: Date.now() - t0,
-            tokenUsage: tokenUsageTotals,
-          };
-        }
-        writeSse(res, {
-          type: "done",
-          elapsedMs: Date.now() - t0,
-        });
-        console.log("[research] streamResearchBrief done", {
-          markdownChars: markdown.length,
-          elapsedMs: Date.now() - t0,
-          stop_reason: final.stop_reason,
-          tokenUsage: tokenUsageTotals,
-        });
-        return {
-          ok: true,
-          markdown,
-          elapsedMs: Date.now() - t0,
-          tokenUsage: tokenUsageTotals,
-        };
-      }
-
-      if (continuations >= MAX_PAUSE_CONTINUATIONS) {
-        console.error("[research] stream hit pause_turn limit");
-        writeSse(res, {
-          type: "error",
-          code: "PAUSE_TURN_LIMIT",
-          message:
-            "Research paused too many times (web search loop). Set RESEARCH_MAX_PAUSE_CONTINUATIONS higher or try again.",
-        });
-        return {
-          ok: false,
-          errorCode: "PAUSE_TURN_LIMIT",
-          errorMessage:
-            "Research paused too many times. Increase RESEARCH_MAX_PAUSE_CONTINUATIONS or retry.",
-          elapsedMs: Date.now() - t0,
-          tokenUsage: tokenUsageTotals,
-        };
-      }
-
-      continuations += 1;
-      writeSse(res, { type: "phase", phase: "pause_turn_continuation" });
-      messages = cloneMessagesForApi(stream.messages);
-      console.log(
-        `[research] stream pause_turn → continuation ${continuations}/${MAX_PAUSE_CONTINUATIONS}`,
-      );
+    // ── Front half: scrape → identity → cache/Stage 1 ──
+    let prepared;
+    try {
+      prepared = await prepareResearch({
+        client,
+        companyUrl,
+        jobUrl,
+        jobDescriptionText,
+        emitPhase: (phase) => writeSse(res, { type: "phase", phase }),
+        tokenUsage: tokenUsageTotals,
+      });
+    } catch (prepErr) {
+      const code =
+        prepErr instanceof PipelineError ? prepErr.code : "RESEARCH_FAILED";
+      const msg =
+        prepErr instanceof Error
+          ? prepErr.message
+          : "Company research failed before the brief could be written.";
+      console.error("[research] pipeline front half failed", prepErr);
+      writeSse(res, { type: "error", code, message: msg });
+      return {
+        ok: false,
+        errorCode: code,
+        errorMessage: msg,
+        elapsedMs: Date.now() - t0,
+        tokenUsage: tokenUsageTotals,
+      };
     }
+
+    console.log("[research] Stage 2 (stream) …", {
+      cacheHit: prepared.cacheHit,
+      company: prepared.companyName,
+      domain: prepared.domain,
+    });
+    writeSse(res, { type: "phase", phase: "generating_brief" });
+
+    const stage2Messages = [
+      {
+        role: "user",
+        content: stage2UserMessage({
+          research: prepared.research,
+          jdContent: prepared.jdContent,
+          resumeText,
+        }),
+      },
+    ];
+
+    // ── Stage 2: Sonnet stream, no tools ──
+    let final = null;
+    let streamAttempt = 0;
+
+    while (streamAttempt < MAX_ANTHROPIC_RETRIES) {
+      streamAttempt += 1;
+      let emittedTextThisAttempt = false;
+
+      const stream = client.messages.stream({
+        model: MODEL,
+        max_tokens: MAX_TOKENS,
+        system: stage2System(),
+        messages: stage2Messages,
+      });
+      activeStream = stream;
+
+      stream.on("text", (delta) => {
+        if (delta) {
+          emittedTextThisAttempt = true;
+          writeSse(res, { type: "text", text: delta });
+        }
+      });
+
+      try {
+        final = await stream.finalMessage();
+        activeStream = null;
+        break;
+      } catch (streamErr) {
+        activeStream = null;
+        try {
+          stream.abort();
+        } catch {
+          /* ignore */
+        }
+
+        const canRetry =
+          isRetriableAnthropicError(streamErr) &&
+          !emittedTextThisAttempt &&
+          streamAttempt < MAX_ANTHROPIC_RETRIES;
+
+        if (canRetry) {
+          const delay = anthropicRetryDelayMs(streamAttempt);
+          console.warn(
+            "[research] Anthropic stream retriable error; retrying segment",
+            {
+              streamAttempt,
+              maxAttempts: MAX_ANTHROPIC_RETRIES,
+              delayMs: delay,
+              error:
+                streamErr instanceof Error
+                  ? streamErr.message
+                  : String(streamErr),
+            },
+          );
+          writeSse(res, { type: "phase", phase: "model_retry" });
+          await sleep(delay);
+          continue;
+        }
+
+        console.error("[research] stream segment failed", streamErr);
+        const msg =
+          streamErr instanceof Error
+            ? streamErr.message
+            : "Stream failed before completion.";
+        if (/stream ended|without producing|prematurely/i.test(msg)) {
+          console.error(
+            "[research] Incomplete SSE often means the host cut the connection (e.g. Vercel maxDuration) or the API closed early.",
+          );
+        }
+        writeSse(res, { type: "error", message: msg });
+        return {
+          ok: false,
+          errorMessage: msg,
+          elapsedMs: Date.now() - t0,
+          tokenUsage: tokenUsageTotals,
+        };
+      }
+    }
+
+    if (!final) {
+      const fallback =
+        "The AI service is busy. Please try again in a few seconds.";
+      console.error("[research] stream segment exhausted retries");
+      writeSse(res, { type: "error", message: fallback });
+      return {
+        ok: false,
+        errorMessage: fallback,
+        elapsedMs: Date.now() - t0,
+        tokenUsage: tokenUsageTotals,
+      };
+    }
+
+    logMessageStep("stage2 stream response", final);
+    accumulateUsage(tokenUsageTotals, final.usage);
+
+    // Light guard: Stage 2 has no tools, so pause_turn should never happen.
+    if (final.stop_reason === "pause_turn") {
+      console.error("[research] unexpected pause_turn on tool-less Stage 2");
+    }
+
+    const markdown = extractTextFromContent(final.content);
+    if (!markdown) {
+      writeSse(res, {
+        type: "error",
+        code: "EMPTY_OUTPUT",
+        message: "The model returned no text for the brief.",
+      });
+      return {
+        ok: false,
+        errorCode: "EMPTY_OUTPUT",
+        errorMessage: "The model returned no text for the brief.",
+        elapsedMs: Date.now() - t0,
+        tokenUsage: tokenUsageTotals,
+      };
+    }
+
+    writeSse(res, {
+      type: "done",
+      elapsedMs: Date.now() - t0,
+    });
+    console.log("[research] streamResearchBrief done", {
+      markdownChars: markdown.length,
+      elapsedMs: Date.now() - t0,
+      cacheHit: prepared.cacheHit,
+      stop_reason: final.stop_reason,
+      tokenUsage: tokenUsageTotals,
+    });
+    return {
+      ok: true,
+      markdown,
+      elapsedMs: Date.now() - t0,
+      tokenUsage: tokenUsageTotals,
+    };
   } finally {
     activeStream = null;
     res.off("close", onResponseClose);

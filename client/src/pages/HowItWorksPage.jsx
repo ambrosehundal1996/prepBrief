@@ -7,46 +7,54 @@ const steps = [
   },
   {
     title: 'Add your resume',
-    body: 'Upload your resume (required for each brief) so every section is personalized to your actual background — your “tell me about yourself”, which projects to highlight, and your strongest talking points mapped directly to the role.',
+    body: 'Upload your resume (required) so every section is personalized — your talking points for “tell me about yourself”, which projects to highlight, and questions to ask them, all mapped to this role.',
   },
   {
-    title: 'Get your cheat sheet in 60 seconds',
-    body: 'We scrape the company’s website, synthesize everything through a world-class hiring manager lens, and generate a structured brief across 7 sections.',
+    title: 'Get your prep brief in 60 seconds',
+    body: 'We research the company and cross-analyze your resume against the job description. You get a structured brief — predicted questions first, then your game plan.',
   },
   {
-    title: 'Walk in prepared',
-    body: 'Read your brief in 2 minutes. Know what they’ll ask, how to answer it, and how to present yourself as the candidate they’re looking for.',
+    title: 'Walk in ready',
+    body: 'Read your brief in 2 minutes. Know what they’ll ask, how to frame your story, and what to ask them — so you don’t reschedule out of unreadiness.',
   },
 ]
 
 const briefSections = [
   {
-    title: 'Tell me about yourself',
-    desc: 'A personalized open/middle/close framework built from your resume.',
+    title: 'What they’re likely to ask you',
+    desc: 'Predicted questions for this company and role — first in the brief.',
   },
   {
-    title: 'What they’re likely to ask',
-    desc: 'Predicted questions specific to this company, not generic prep.',
+    title: 'Tell me about yourself',
+    desc: 'Structured talking points from your resume — not a script.',
   },
   {
     title: 'Which projects to highlight',
-    desc: 'Exactly which experiences to lead with and which to avoid.',
+    desc: 'Which experiences to lead with and which to avoid.',
+  },
+  {
+    title: 'Questions to ask them',
+    desc: '5–7 smart questions grounded in their priorities and your role.',
   },
   {
     title: 'Interview positioning',
     desc: 'Skills to emphasize and JD language to mirror.',
   },
   {
-    title: 'Company overview',
-    desc: 'What they do and the problem they solve, in plain language.',
-  },
-  {
     title: 'The company’s current big bet',
-    desc: 'What they’re focused on right now, so you sound like an insider.',
+    desc: 'What they’re focused on right now.',
   },
   {
-    title: 'Why I’m interested',
-    desc: 'Ready-to-use talking points you can say naturally.',
+    title: 'Company overview',
+    desc: 'What they do and the problem they solve.',
+  },
+  {
+    title: 'Brief summary',
+    desc: 'Hiring-manager read on the role and how to position yourself.',
+  },
+  {
+    title: 'Why us — talking points',
+    desc: 'Motivation hooks for “why this company?” — stay-ready framing.',
   },
 ]
 
@@ -58,7 +66,8 @@ export default function HowItWorksPage() {
           How PrepBrief works
         </h1>
         <p className="marketing-lead">
-          From job posting to interview-ready in under 60 seconds.
+          Built from your resume and their job description. Feel ready in about
+          60 seconds.
         </p>
 
         <ol className="how-steps">

@@ -117,8 +117,8 @@ function withResumeUpload(req, res, next) {
 }
 
 /**
- * Parse JSON or multipart body (job fields + required resume file).
- * @returns {Promise<{ error: string } | { job: object, companyUrlOpt?: string, resumeText: string, resumeMeta: { attached: boolean, chars: number, truncated: boolean } }>}
+ * Parse JSON or multipart body (job fields + optional resume file).
+ * @returns {Promise<{ error: string } | { job: object, companyUrlOpt?: string, resumeText: string | null, resumeMeta: { attached: boolean, chars: number, truncated: boolean } }>}
  */
 async function parseResearchPayload(req) {
   const job = normalizeJobInputs(req.body);
@@ -127,8 +127,12 @@ async function parseResearchPayload(req) {
   const file = req.files?.resume?.[0];
   const resumeMeta = { attached: false, chars: 0, truncated: false };
   if (!file) {
+    // Resume is optional — a JD-only brief simply skips the personalized sections.
     return {
-      error: "A resume file (PDF or .docx) is required for each brief.",
+      job,
+      companyUrlOpt,
+      resumeText: null,
+      resumeMeta,
     };
   }
   const result = await extractResumeText(

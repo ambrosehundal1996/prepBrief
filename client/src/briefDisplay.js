@@ -84,8 +84,10 @@ const INTERVIEW_KEYS = [
   "what they're likely to ask you",
   'what they are likely to ask you',
   'which projects to highlight',
+  'conversation hooks',
   'interview positioning',
   'your strongest talking points',
+  'questions to ask them',
   'questions to ask the interviewer',
 ]
 
@@ -95,6 +97,7 @@ const COMPANY_KEYS = [
   'current big bet',
   "why i'm interested",
   'why i am interested in this company',
+  'why us',
   'the problem it solves',
   'core features',
   'product demo',
@@ -107,6 +110,36 @@ export function getBriefSectionGroup(sectionTitle) {
   const n = normalizeTitle(sectionTitle)
   if (INTERVIEW_KEYS.some((k) => n.includes(k) || n === k)) return 'interview'
   if (COMPANY_KEYS.some((k) => n.includes(k) || n === k)) return 'company'
+  return null
+}
+
+/** Personalized sections blurred for non-paid users (title-based lock map). */
+const FULLY_LOCKED_KEYS = [
+  'tell me about yourself',
+  'which projects to highlight',
+  'conversation hooks',
+  'interview positioning',
+  'brief summary',
+  'why us',
+  "why i'm interested",
+]
+
+/** Only the Behavioral group is blurred; role/company questions stay visible. */
+const BEHAVIORAL_LOCKED_KEYS = [
+  "what they're likely to ask you",
+  'what they are likely to ask you',
+]
+
+/**
+ * Lock level for a section when the user is not paid.
+ * @returns {'full' | 'behavioral' | null}
+ */
+export function getBriefSectionLock(sectionTitle) {
+  const n = normalizeTitle(sectionTitle)
+  if (FULLY_LOCKED_KEYS.some((k) => n.includes(k) || n === k)) return 'full'
+  if (BEHAVIORAL_LOCKED_KEYS.some((k) => n.includes(k) || n === k)) {
+    return 'behavioral'
+  }
   return null
 }
 

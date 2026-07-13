@@ -8,8 +8,15 @@ import PricingPage from './pages/PricingPage.jsx'
 import {
   extractStickyBriefHeader,
   getBriefSectionGroup,
+  getBriefSectionLock,
   stripStructuralInstructionLines,
 } from './briefDisplay'
+import {
+  FREE_BRIEF_LIMIT,
+  getFreeBriefsUsed,
+  incrementFreeBriefsUsed,
+  isPaid,
+} from './gating'
 import {
   MAX_SAVED_BRIEFS,
   deleteBriefFromHistory,
@@ -111,14 +118,29 @@ function isPdfResume(file) {
   return file.type === 'application/pdf' || n.endsWith('.pdf')
 }
 
+/** SSE phase → narration shown while the pipeline runs. */
+const PHASE_NARRATION = {
+  scraping_jd: 'Reading the job posting…',
+  identifying_company: 'Identifying the company…',
+  research_news: 'Scanning recent news…',
+  research_exec: 'Checking exec interviews…',
+  research_hiring: 'Reading their hiring signals…',
+  research_extra: 'Digging into their strategy…',
+  generating_brief: 'Writing your brief…',
+  model_retry: 'Reconnecting to the AI service…',
+}
+
 export default function App() {
   const [jobUrl, setJobUrl] = useState('')
   const [resumeFile, setResumeFile] = useState(null)
   const [resumeDragActive, setResumeDragActive] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [phaseText, setPhaseText] = useState('')
   const [clientError, setClientError] = useState('')
   const [apiError, setApiError] = useState('')
   const [markdown, setMarkdown] = useState(null)
+  const [briefHadResume, setBriefHadResume] = useState(true)
+  const [freeBriefsUsed, setFreeBriefsUsed] = useState(() => getFreeBriefsUsed())
   const [responseTimeMs, setResponseTimeMs] = useState(null)
   const [savedBriefs, setSavedBriefs] = useState(() => loadBriefHistory())
   const [savedBriefsPanelOpen, setSavedBriefsPanelOpen] = useState(false)
@@ -292,9 +314,10 @@ export default function App() {
       return
     }
 
-    if (!resumeFile) {
+    if (!isPaid() && getFreeBriefsUsed() >= FREE_BRIEF_LIMIT) {
+      setFreeBriefsUsed(getFreeBriefsUsed())
       setClientError(
-        'Please upload your resume (PDF or .docx). It is required for every brief.',
+        'You have used both free briefs for this browser. Paid access is coming soon.',
       )
       return
     }
@@ -303,19 +326,21 @@ export default function App() {
     setMarkdown('')
     streamMdRef.current = ''
     setResponseTimeMs(null)
+    setPhaseText('')
     scrollOnStreamRef.current = false
     setActiveSavedId(null)
+    setBriefHadResume(Boolean(resumeFile))
 
     const endpoint = apiUrl('/api/research/stream')
     const t0 = performance.now()
     const formData = new FormData()
     formData.append('jobUrl', trimmedJob)
-    formData.append('resume', resumeFile)
+    if (resumeFile) formData.append('resume', resumeFile)
 
     console.log('[prepbrief] Generate Brief: streaming POST', {
       endpoint,
       jobUrl: trimmedJob,
-      hasResume: true,
+      hasResume: Boolean(resumeFile),
     })
 
     try {
@@ -391,6 +416,8 @@ export default function App() {
               }
             } else if (payload.type === 'phase') {
               console.log('[prepbrief] stream phase', payload.phase)
+              const narration = PHASE_NARRATION[payload.phase]
+              if (narration) setPhaseText(narration)
             } else if (payload.type === 'done') {
               sawDone = true
               const totalMs = Math.round(performance.now() - t0)
@@ -424,6 +451,9 @@ export default function App() {
             markdown: finalMd,
           })
           setSavedBriefs(items)
+          if (!isPaid()) {
+            setFreeBriefsUsed(incrementFreeBriefsUsed())
+          }
         }
       }
     } catch (err) {
@@ -434,6 +464,7 @@ export default function App() {
       )
     } finally {
       setLoading(false)
+      setPhaseText('')
     }
   }
 
@@ -641,12 +672,22 @@ export default function App() {
                     {!savedBriefsPanelOpen && !resumePanelOpen && (
           <header className="site-header">
             <h1 className="site-title">
-              From job link to interview-ready in 60 seconds.
+              Walk into your interview knowing what they&apos;ll ask.
             </h1>
             <p className="tagline">
-              No research. No guessing. Just paste and go.
+              A brief built from your resume and their job description — not
+              generic advice. Ready in 60 seconds.
             </p>
+            <p className="site-moat">Built from your resume and their job description.</p>
+            <p className="site-cta-line">Don&apos;t reschedule. Get ready.</p>
           </header>
+        )}
+
+        {!savedBriefsPanelOpen && !resumePanelOpen && (
+          <blockquote className="home-founder-story">
+            I used to reschedule interviews when I didn&apos;t feel ready. So I
+            built the thing that makes me feel ready in 60 seconds.
+          </blockquote>
         )}
 
         <main id="top">
@@ -659,7 +700,7 @@ export default function App() {
           className="resume-file-input"
           tabIndex={-1}
           disabled={loading}
-          aria-label="Resume file: PDF or .docx, required for each brief"
+          aria-label="Resume file: PDF or .docx, optional — personalizes your brief"
           onChange={(ev) => setResumeFromFileList(ev.target.files)}
         />
         {!savedBriefsPanelOpen && !resumePanelOpen && (
@@ -683,18 +724,16 @@ export default function App() {
               disabled={loading}
             />
             <p className="field-hint">
-              We read the posting to find the employer, then build your company
-              brief and role-specific talking points.
+              Built from your resume and their job description. We read the
+              posting, then generate your prep brief — predicted questions,
+              talking points, and company context.
             </p>
           </div>
 
           {!resumeFile && (
             <div className="field">
               <span className="field-label" id="resume-field-heading">
-                Resume{' '}
-                <span className="field-required" aria-hidden="true">
-                  *
-                </span>
+                Resume <span className="field-optional">(optional)</span>
               </span>
               <button
                 type="button"
@@ -733,15 +772,29 @@ export default function App() {
                 <span className="resume-dropzone__main">
                   Drop your resume here or click to browse
                   <span className="resume-dropzone__sub">
-                    PDF or .docx — required; we tailor every brief to your
-                    background
+                    PDF or .docx — optional, but it unlocks the personalized
+                    sections of your brief
                   </span>
                 </span>
               </button>
               <p className="field-hint">
-                After you upload once, we keep your resume in this browser so you
-                do not have to add it here again. Use <strong>My resume</strong>{' '}
-                in the sidebar to preview or replace it.
+                Without a resume you still get the company research; with one,
+                every section is tailored to your background. After you upload
+                once, we keep your resume in this browser. Use{' '}
+                <strong>My resume</strong> in the sidebar to preview or replace
+                it.
+              </p>
+            </div>
+          )}
+
+          {!isPaid() && freeBriefsUsed >= FREE_BRIEF_LIMIT && (
+            <div className="paywall-card" role="status">
+              <p className="paywall-title">
+                You have used both free briefs for this browser.
+              </p>
+              <p className="paywall-copy">
+                Paid access is coming soon — unlimited briefs, fully unlocked
+                personalized sections, and priority generation.
               </p>
             </div>
           )}
@@ -750,16 +803,15 @@ export default function App() {
         <button
               type="submit"
               className="btn-primary"
-              disabled={loading || !resumeFile}
+              disabled={loading || (!isPaid() && freeBriefsUsed >= FREE_BRIEF_LIMIT)}
             >
               Generate my brief →
             </button>
             {loading && (
               <div className="loading-inline" aria-live="polite">
                 <span className="spinner" aria-hidden />
-                {markdown === ''
-                  ? 'Starting research…'
-                  : 'Streaming brief…'}
+                {phaseText ||
+                  (markdown === '' ? 'Starting research…' : 'Streaming brief…')}
               </div>
             )}
           </div>
@@ -857,11 +909,16 @@ export default function App() {
                   </article>
                 ) : (
                   (() => {
+                    const paid = isPaid()
+                    const lockLabel = briefHadResume
+                      ? 'Unlock the personalized sections — paid access coming soon'
+                      : 'Generic — add your resume to personalize'
                     let prevGroup = null
                     return briefSections.flatMap((chunk, i) => {
                       const title = getSectionTitle(chunk)
                       const id = sectionNavItems[i].id
                       const group = getBriefSectionGroup(title)
+                      const lock = paid ? null : getBriefSectionLock(title)
                       const pieces = []
                       if (group && group !== prevGroup) {
                         pieces.push(
@@ -885,6 +942,8 @@ export default function App() {
                           title={title}
                           chunk={chunk}
                           markdownComponents={markdownComponents}
+                          lock={lock}
+                          lockLabel={lockLabel}
                         />,
                       )
                       return pieces
@@ -927,21 +986,21 @@ export default function App() {
                                   Spend 45 minutes piecing together a basic picture
                                 </li>
                                 <li>
-                                  Still not sure what to say or how to present
-                                  yourself
+                                  Still not sure how to frame your story or what
+                                  to ask them
                                 </li>
-                                <li>Walk in feeling underprepared</li>
+                                <li>Walk in anxious — or reschedule</li>
                               </ul>
                             </div>
                             <div className="home-ba-card home-ba-card--after card">
                               <h3 className="home-ba-title">With PrepBrief</h3>
                               <ul className="home-ba-list">
-                                <li>Paste one job posting link</li>
+                                <li>Paste your job link and resume</li>
                                 <li>Wait 60 seconds</li>
                                 <li>
-                                  Read a 2-minute personalized cheat sheet
+                                  Read a 2-minute personalized prep brief
                                 </li>
-                                <li>Walk in feeling like an insider</li>
+                                <li>Walk in feeling ready</li>
                               </ul>
                             </div>
                           </div>
@@ -967,23 +1026,22 @@ export default function App() {
                             </article>
                             <article className="home-wyg-card card">
                               <h3 className="home-wyg-card-title">
-                                Your personal script
+                                Your talking points
                               </h3>
                               <p className="home-wyg-card-copy">
-                                Get a tailored &quot;tell me about yourself&quot;
-                                framework built from your resume and the job
-                                description. Know exactly what to lead with.
+                                A tailored &quot;tell me about yourself&quot;
+                                framework from your resume and the job
+                                description — structured prep, not a script.
                               </p>
                             </article>
                             <article className="home-wyg-card card">
                               <h3 className="home-wyg-card-title">
-                                Sound like an insider
+                                Questions to ask them
                               </h3>
                               <p className="home-wyg-card-copy">
-                                Understand what the company is focused on right now
-                                — the strategic bet, the problem they solve, why
-                                you&apos;re genuinely interested. Reference it in
-                                the interview.
+                                Smart questions grounded in their current
+                                priorities and your role — so you sound prepared,
+                                not passive.
                               </p>
                             </article>
                           </div>
@@ -1123,8 +1181,8 @@ export default function App() {
             ) : (
               <div className="resume-panel-empty">
                 <p className="resume-panel-empty-copy">
-                  No resume on file yet. Upload a PDF or .docx—required before you
-                  can generate a brief.
+                  No resume on file yet. Upload a PDF or .docx — optional, but
+                  it unlocks the personalized sections of every brief.
                 </p>
                 <button
                   type="button"
@@ -1304,8 +1362,8 @@ export default function App() {
                 <span className="visually-hidden">PrepBrief</span>
               </span>
               <p className="site-footer-blurb">
-                Stop spending an hour on company research. Get interview-ready in 60
-                seconds.
+                Personalized interview prep from your resume and their job
+                description. Feel ready in 60 seconds.
               </p>
             </div>
             <nav className="site-footer-nav" aria-label="Footer">

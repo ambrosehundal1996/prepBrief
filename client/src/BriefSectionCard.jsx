@@ -11,6 +11,19 @@ function stripLeadingSectionHeading(md) {
   return md.replace(/^##[^\n]+\n+/, '').trimStart()
 }
 
+/**
+ * For sections where only the Behavioral group is gated: split the body at the
+ * "**Role & company specific**" marker. Returns null when the marker is missing.
+ */
+function splitAtRoleGroup(bodyMd) {
+  const match = bodyMd.match(/^\s*\*\*Role\b.*$/im)
+  if (!match || match.index == null) return null
+  return {
+    locked: bodyMd.slice(0, match.index).trimEnd(),
+    visible: bodyMd.slice(match.index).trimStart(),
+  }
+}
+
 function ClipboardIcon() {
   return (
     <svg
@@ -31,10 +44,34 @@ function ClipboardIcon() {
   )
 }
 
-export function BriefSectionCard({ id, title, chunk, markdownComponents }) {
+function LockedOverlay({ label }) {
+  return (
+    <div className="brief-lock-overlay" role="note">
+      <span className="brief-lock-overlay-label">{label}</span>
+    </div>
+  )
+}
+
+/**
+ * @param {object} props
+ * @param {'full' | 'behavioral' | null} [props.lock] blur level for free tier
+ * @param {string} [props.lockLabel] overlay label when locked
+ */
+export function BriefSectionCard({
+  id,
+  title,
+  chunk,
+  markdownComponents,
+  lock = null,
+  lockLabel = '',
+}) {
   const [copied, setCopied] = useState(false)
   const bodyMd = stripLeadingSectionHeading(chunk)
-  const prepared = prepareBriefSectionBodyForRender(bodyMd)
+
+  const behavioralSplit =
+    lock === 'behavioral' ? splitAtRoleGroup(bodyMd) : null
+  const effectiveLock =
+    lock === 'behavioral' && !behavioralSplit ? null : lock
 
   const handleCopy = useCallback(() => {
     const text = `${title}\n\n${sectionChunkToPlainText(chunk)}`
@@ -59,21 +96,67 @@ export function BriefSectionCard({ id, title, chunk, markdownComponents }) {
               Copied!
             </span>
           )}
-          <button
-            type="button"
-            className="copy-btn"
-            onClick={handleCopy}
-            aria-label={`Copy section: ${title}`}
-          >
-            <ClipboardIcon />
-          </button>
+          {effectiveLock !== 'full' && (
+            <button
+              type="button"
+              className="copy-btn"
+              onClick={handleCopy}
+              aria-label={`Copy section: ${title}`}
+            >
+              <ClipboardIcon />
+            </button>
+          )}
         </div>
       </div>
-      <div className="markdown-output">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-          {prepared}
-        </ReactMarkdown>
-      </div>
+      {effectiveLock === 'full' ? (
+        <div className="brief-lock-wrap">
+          <div className="markdown-output brief-locked-content" aria-hidden>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={markdownComponents}
+            >
+              {prepareBriefSectionBodyForRender(bodyMd)}
+            </ReactMarkdown>
+          </div>
+          <LockedOverlay label={lockLabel} />
+        </div>
+      ) : effectiveLock === 'behavioral' && behavioralSplit ? (
+        <>
+          {behavioralSplit.locked && (
+            <div className="brief-lock-wrap">
+              <div
+                className="markdown-output brief-locked-content"
+                aria-hidden
+              >
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={markdownComponents}
+                >
+                  {prepareBriefSectionBodyForRender(behavioralSplit.locked)}
+                </ReactMarkdown>
+              </div>
+              <LockedOverlay label={lockLabel} />
+            </div>
+          )}
+          <div className="markdown-output">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={markdownComponents}
+            >
+              {prepareBriefSectionBodyForRender(behavioralSplit.visible)}
+            </ReactMarkdown>
+          </div>
+        </>
+      ) : (
+        <div className="markdown-output">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={markdownComponents}
+          >
+            {prepareBriefSectionBodyForRender(bodyMd)}
+          </ReactMarkdown>
+        </div>
+      )}
     </article>
   )
 }
