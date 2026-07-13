@@ -22,6 +22,61 @@ function excerpt(text, maxChars) {
   return `${t.slice(0, maxChars)}\n…[truncated]`;
 }
 
+/**
+ * Repair JSON cut off mid-output (max_tokens): drop the incomplete trailing
+ * value, then close every still-open brace/bracket. Returns null if hopeless.
+ */
+function repairTruncatedJson(t) {
+  let inStr = false;
+  let esc = false;
+  let lastCloseIdx = -1;
+  for (let i = 0; i < t.length; i += 1) {
+    const c = t[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') {
+      inStr = true;
+      continue;
+    }
+    if (c === "}" || c === "]") lastCloseIdx = i;
+  }
+  if (lastCloseIdx < 0) return null;
+
+  let s = t.slice(0, lastCloseIdx + 1);
+  inStr = false;
+  esc = false;
+  const stack = [];
+  for (const c of s) {
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') {
+      inStr = true;
+      continue;
+    }
+    if (c === "{" || c === "[") stack.push(c);
+    else if (c === "}" || c === "]") stack.pop();
+  }
+  while (stack.length) {
+    s += stack.pop() === "{" ? "}" : "]";
+  }
+  try {
+    const parsed = JSON.parse(s);
+    return parsed != null && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Strip ```json fences and surrounding prose, then parse. Throws on failure. */
 function parseJsonObject(rawText) {
   let t = typeof rawText === "string" ? rawText.trim() : "";
@@ -33,11 +88,20 @@ function parseJsonObject(rawText) {
     const end = t.lastIndexOf("}");
     if (start !== -1 && end > start) t = t.slice(start, end + 1);
   }
-  const parsed = JSON.parse(t);
-  if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("Parsed JSON is not an object.");
+  try {
+    const parsed = JSON.parse(t);
+    if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("Parsed JSON is not an object.");
+    }
+    return parsed;
+  } catch (err) {
+    const repaired = repairTruncatedJson(t);
+    if (repaired) {
+      console.warn("[stage1] JSON was truncated — repaired by closing brackets");
+      return repaired;
+    }
+    throw err;
   }
-  return parsed;
 }
 
 function textFromContent(content) {
@@ -280,6 +344,12 @@ async function runStage1(
 
     const final = await stream.finalMessage();
     usageTotalsFrom(final.usage, usage);
+    // Some tool versions report 0 in usage.server_tool_use — fall back to the
+    // server_tool_use blocks we observed so cost logging stays accurate.
+    const reported = final.usage?.server_tool_use?.web_search_requests;
+    if ((typeof reported !== "number" || reported === 0) && searchCount > 0) {
+      usage.web_search_requests += searchCount;
+    }
     console.log("[stage1] segment done", {
       stop_reason: final.stop_reason,
       searches: searchCount,

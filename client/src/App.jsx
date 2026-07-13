@@ -11,12 +11,7 @@ import {
   getBriefSectionLock,
   stripStructuralInstructionLines,
 } from './briefDisplay'
-import {
-  FREE_BRIEF_LIMIT,
-  getFreeBriefsUsed,
-  incrementFreeBriefsUsed,
-  isPaid,
-} from './gating'
+import { isPaid } from './gating'
 import {
   MAX_SAVED_BRIEFS,
   deleteBriefFromHistory,
@@ -140,7 +135,6 @@ export default function App() {
   const [apiError, setApiError] = useState('')
   const [markdown, setMarkdown] = useState(null)
   const [briefHadResume, setBriefHadResume] = useState(true)
-  const [freeBriefsUsed, setFreeBriefsUsed] = useState(() => getFreeBriefsUsed())
   const [responseTimeMs, setResponseTimeMs] = useState(null)
   const [savedBriefs, setSavedBriefs] = useState(() => loadBriefHistory())
   const [savedBriefsPanelOpen, setSavedBriefsPanelOpen] = useState(false)
@@ -314,14 +308,6 @@ export default function App() {
       return
     }
 
-    if (!isPaid() && getFreeBriefsUsed() >= FREE_BRIEF_LIMIT) {
-      setFreeBriefsUsed(getFreeBriefsUsed())
-      setClientError(
-        'You have used both free briefs for this browser. Paid access is coming soon.',
-      )
-      return
-    }
-
     setLoading(true)
     setMarkdown('')
     streamMdRef.current = ''
@@ -451,9 +437,6 @@ export default function App() {
             markdown: finalMd,
           })
           setSavedBriefs(items)
-          if (!isPaid()) {
-            setFreeBriefsUsed(incrementFreeBriefsUsed())
-          }
         }
       }
     } catch (err) {
@@ -787,23 +770,11 @@ export default function App() {
             </div>
           )}
 
-          {!isPaid() && freeBriefsUsed >= FREE_BRIEF_LIMIT && (
-            <div className="paywall-card" role="status">
-              <p className="paywall-title">
-                You have used both free briefs for this browser.
-              </p>
-              <p className="paywall-copy">
-                Paid access is coming soon — unlimited briefs, fully unlocked
-                personalized sections, and priority generation.
-              </p>
-            </div>
-          )}
-
           <div className="submit-row">
         <button
               type="submit"
               className="btn-primary"
-              disabled={loading || (!isPaid() && freeBriefsUsed >= FREE_BRIEF_LIMIT)}
+              disabled={loading}
             >
               Generate my brief →
             </button>
