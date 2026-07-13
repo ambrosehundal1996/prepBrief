@@ -1171,6 +1171,26 @@ main#top {
   color: #9ca3af;
 }
 
+.toc-group + .toc-group {
+  margin-top: 0.85rem;
+}
+
+/* Subordinate to .toc-vertical-title: one step smaller, same treatment. */
+.toc-group-label {
+  margin: 0 0 0.35rem 0.2rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: #b6bcc7;
+}
+
+.toc-lock {
+  flex: 0 0 auto;
+  margin-left: 0.4rem;
+  opacity: 0.55;
+}
+
 .toc-vertical-list {
   list-style: none;
   margin: 0;
@@ -1181,12 +1201,15 @@ main#top {
 }
 
 .toc-tab {
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
   padding: 0.45rem 0.55rem;
   font-size: 0.8125rem;
   font-weight: 500;
   line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
   color: #1e40af;
   text-decoration: none;
   text-align: left;

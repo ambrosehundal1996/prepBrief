@@ -7,6 +7,7 @@ import HowItWorksPage from './pages/HowItWorksPage.jsx'
 import PricingPage from './pages/PricingPage.jsx'
 import {
   extractStickyBriefHeader,
+  getBriefNavMeta,
   getBriefSectionGroup,
   getBriefSectionLock,
   stripStructuralInstructionLines,
@@ -466,13 +467,30 @@ export default function App() {
       briefSections.map((chunk, i) => {
         const title = getSectionTitle(chunk)
         const slug = sectionSlug(title) || `section-${i + 1}`
+        const { label, group } = getBriefNavMeta(title)
         return {
           id: `brief-section-${slug}-${i + 1}`,
           title,
+          navLabel: label,
+          navGroup: group,
+          locked: !isPaid() && getBriefSectionLock(title) !== null,
         }
       }),
     [briefSections],
   )
+
+  /** Nav split into "Your prep" / "The company"; empty groups are dropped. */
+  const sectionNavGroups = useMemo(() => {
+    const groups = [
+      { key: 'prep', label: 'Your prep', items: [] },
+      { key: 'company', label: 'The company', items: [] },
+    ]
+    for (const item of sectionNavItems) {
+      const bucket = groups.find((g) => g.key === item.navGroup) || groups[0]
+      bucket.items.push(item)
+    }
+    return groups.filter((g) => g.items.length > 0)
+  }, [sectionNavItems])
 
   const [activeBriefNavId, setActiveBriefNavId] = useState(null)
 
@@ -853,24 +871,61 @@ export default function App() {
               {sectionNavItems.length > 0 && (
                 <nav className="toc-vertical" aria-label="Brief sections">
                   <p className="toc-vertical-title">Jump to</p>
-                  <ul className="toc-vertical-list">
-                    {sectionNavItems.map((item) => {
-                      const isActive = activeBriefNavId === item.id
-                      return (
-                        <li key={item.id}>
-                          <a
-                            className={
-                              isActive ? 'toc-tab toc-tab--active' : 'toc-tab'
-                            }
-                            href={`#${item.id}`}
-                            aria-current={isActive ? 'location' : undefined}
-                          >
-                            {item.title}
-                          </a>
-                        </li>
-                      )
-                    })}
-                  </ul>
+                  {sectionNavGroups.map((group) => (
+                    <div key={group.key} className="toc-group">
+                      <p className="toc-group-label" aria-hidden="true">
+                        {group.label}
+                      </p>
+                      <ul
+                        className="toc-vertical-list"
+                        aria-label={group.label}
+                      >
+                        {group.items.map((item) => {
+                          const isActive = activeBriefNavId === item.id
+                          return (
+                            <li key={item.id}>
+                              <a
+                                className={
+                                  isActive
+                                    ? 'toc-tab toc-tab--active'
+                                    : 'toc-tab'
+                                }
+                                href={`#${item.id}`}
+                                aria-current={isActive ? 'location' : undefined}
+                              >
+                                {item.navLabel}
+                                {item.locked && (
+                                  <svg
+                                    className="toc-lock"
+                                    width="10"
+                                    height="10"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2.5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    aria-label="(locked)"
+                                    role="img"
+                                  >
+                                    <rect
+                                      x="3"
+                                      y="11"
+                                      width="18"
+                                      height="11"
+                                      rx="2"
+                                      ry="2"
+                                    />
+                                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                                  </svg>
+                                )}
+                              </a>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </div>
+                  ))}
                 </nav>
               )}
               <div className="brief-stack">

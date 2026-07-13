@@ -143,6 +143,41 @@ export function getBriefSectionLock(sectionTitle) {
   return null
 }
 
+/**
+ * "Jump to" nav metadata: short one-line labels decoupled from the full
+ * section headers, plus the nav group ('prep' before 'company').
+ * Section headers in the brief itself are never touched.
+ */
+const NAV_ENTRIES = [
+  { key: "what they're likely to ask you", label: 'Likely questions', group: 'prep' },
+  { key: 'what they are likely to ask you', label: 'Likely questions', group: 'prep' },
+  { key: 'tell me about yourself', label: 'Tell me about yourself', group: 'prep' },
+  { key: 'which projects to highlight', label: 'Projects to highlight', group: 'prep' },
+  { key: 'conversation hooks', label: 'Conversation hooks', group: 'prep' },
+  { key: 'questions to ask them', label: 'Questions to ask them', group: 'prep' },
+  { key: 'questions to ask the interviewer', label: 'Questions to ask them', group: 'prep' },
+  { key: 'interview positioning', label: 'Positioning', group: 'prep' },
+  { key: 'current big bet', label: 'Their big bet', group: 'company' },
+  { key: 'company overview', label: 'Company overview', group: 'company' },
+  { key: 'brief summary', label: 'Brief summary', group: 'company' },
+  { key: 'why us', label: 'Why us', group: 'company' },
+  { key: "why i'm interested", label: 'Why us', group: 'company' },
+]
+
+/**
+ * @returns {{ label: string, group: 'prep' | 'company' }} short nav label and
+ * group for a section title; unknown sections keep their full title and are
+ * grouped by the existing interview/company mapping (default: prep).
+ */
+export function getBriefNavMeta(sectionTitle) {
+  const n = normalizeTitle(sectionTitle)
+  const entry = NAV_ENTRIES.find((e) => n.includes(e.key) || n === e.key)
+  if (entry) return { label: entry.label, group: entry.group }
+  const fallbackGroup =
+    getBriefSectionGroup(sectionTitle) === 'company' ? 'company' : 'prep'
+  return { label: sectionTitle, group: fallbackGroup }
+}
+
 export function extractStickyBriefHeader(markdown, jobUrl) {
   let company = ''
   let role = ''
