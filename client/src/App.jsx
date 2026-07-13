@@ -8,7 +8,6 @@ import PricingPage from './pages/PricingPage.jsx'
 import {
   extractStickyBriefHeader,
   getBriefNavMeta,
-  getBriefSectionGroup,
   stripStructuralInstructionLines,
 } from './briefDisplay'
 import {
@@ -179,6 +178,7 @@ export default function App() {
     setSavedBriefsPanelOpen(false)
     setResumePanelOpen(false)
     setMarkdown(entry.markdown)
+    setBriefTab('prep')
     setResponseTimeMs(null)
     setJobUrl(entry.jobUrl)
     setActiveSavedId(entry.id)
@@ -311,6 +311,7 @@ export default function App() {
     streamMdRef.current = ''
     setResponseTimeMs(null)
     setPhaseText('')
+    setBriefTab('prep')
     scrollOnStreamRef.current = false
     setActiveSavedId(null)
 
@@ -474,23 +475,45 @@ export default function App() {
     [briefSections],
   )
 
-  /** Nav split into "Your prep" / "The company"; empty groups are dropped. */
-  const sectionNavGroups = useMemo(() => {
-    const groups = [
-      { key: 'prep', label: 'Your prep', items: [] },
-      { key: 'company', label: 'The company', items: [] },
+  /** The two toggleable views; a tab disappears if it has no sections. */
+  const briefTabs = useMemo(() => {
+    const tabs = [
+      { key: 'prep', label: 'Role specific', count: 0 },
+      { key: 'company', label: 'Company overview', count: 0 },
     ]
     for (const item of sectionNavItems) {
-      const bucket = groups.find((g) => g.key === item.navGroup) || groups[0]
-      bucket.items.push(item)
+      const tab = tabs.find((t) => t.key === item.navGroup) || tabs[0]
+      tab.count += 1
     }
-    return groups.filter((g) => g.items.length > 0)
+    return tabs.filter((t) => t.count > 0)
   }, [sectionNavItems])
+
+  const [briefTab, setBriefTab] = useState('prep')
+
+  // If the active tab has no sections (e.g. mid-stream), fall back to one that does.
+  useEffect(() => {
+    if (briefTabs.length === 0) return
+    if (!briefTabs.some((t) => t.key === briefTab)) {
+      setBriefTab(briefTabs[0].key)
+    }
+  }, [briefTabs, briefTab])
+
+  const visibleNavItems = useMemo(
+    () => sectionNavItems.filter((item) => item.navGroup === briefTab),
+    [sectionNavItems, briefTab],
+  )
+
+  const switchBriefTab = useCallback((key) => {
+    setBriefTab(key)
+    requestAnimationFrame(() => {
+      outputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }, [])
 
   const [activeBriefNavId, setActiveBriefNavId] = useState(null)
 
   useEffect(() => {
-    if (sectionNavItems.length === 0) {
+    if (visibleNavItems.length === 0) {
       setActiveBriefNavId(null)
       return
     }
@@ -506,8 +529,8 @@ export default function App() {
     let raf = 0
     const updateActive = () => {
       const threshold = navThresholdPx()
-      let current = sectionNavItems[0].id
-      for (const item of sectionNavItems) {
+      let current = visibleNavItems[0].id
+      for (const item of visibleNavItems) {
         const el = document.getElementById(item.id)
         if (!el) continue
         if (el.getBoundingClientRect().top <= threshold) current = item.id
@@ -526,7 +549,7 @@ export default function App() {
       cancelAnimationFrame(raf)
       window.removeEventListener('scroll', onScroll)
     }
-  }, [sectionNavItems])
+  }, [visibleNavItems])
 
   const stickyBriefContext = useMemo(() => {
     const md =
@@ -856,46 +879,61 @@ export default function App() {
                 </span>
               </div>
             )}
+            {briefTabs.length > 1 && (
+              <div
+                className="brief-tabs"
+                role="tablist"
+                aria-label="Brief views"
+              >
+                {briefTabs.map((tab) => {
+                  const isActive = briefTab === tab.key
+                  return (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      className={
+                        isActive
+                          ? 'brief-tab-btn brief-tab-btn--active'
+                          : 'brief-tab-btn'
+                      }
+                      onClick={() => switchBriefTab(tab.key)}
+                    >
+                      {tab.label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
             <div
               className={
-                sectionNavItems.length > 0
+                visibleNavItems.length > 0
                   ? 'brief-layout'
                   : 'brief-layout brief-layout--content-only'
               }
             >
-              {sectionNavItems.length > 0 && (
+              {visibleNavItems.length > 0 && (
                 <nav className="toc-vertical" aria-label="Brief sections">
                   <p className="toc-vertical-title">Jump to</p>
-                  {sectionNavGroups.map((group) => (
-                    <div key={group.key} className="toc-group">
-                      <p className="toc-group-label" aria-hidden="true">
-                        {group.label}
-                      </p>
-                      <ul
-                        className="toc-vertical-list"
-                        aria-label={group.label}
-                      >
-                        {group.items.map((item) => {
-                          const isActive = activeBriefNavId === item.id
-                          return (
-                            <li key={item.id}>
-                              <a
-                                className={
-                                  isActive
-                                    ? 'toc-tab toc-tab--active'
-                                    : 'toc-tab'
-                                }
-                                href={`#${item.id}`}
-                                aria-current={isActive ? 'location' : undefined}
-                              >
-                                {item.navLabel}
-                              </a>
-                            </li>
-                          )
-                        })}
-                      </ul>
-                    </div>
-                  ))}
+                  <ul className="toc-vertical-list">
+                    {visibleNavItems.map((item) => {
+                      const isActive = activeBriefNavId === item.id
+                      return (
+                        <li key={item.id}>
+                          <a
+                            className={
+                              isActive ? 'toc-tab toc-tab--active' : 'toc-tab'
+                            }
+                            href={`#${item.id}`}
+                            aria-current={isActive ? 'location' : undefined}
+                          >
+                            {item.navLabel}
+                          </a>
+                        </li>
+                      )
+                    })}
+                  </ul>
                 </nav>
               )}
               <div className="brief-stack">
@@ -904,40 +942,19 @@ export default function App() {
                     <p className="brief-pending">Generating…</p>
                   </article>
                 ) : (
-                  (() => {
-                    let prevGroup = null
-                    return briefSections.flatMap((chunk, i) => {
-                      const title = getSectionTitle(chunk)
-                      const id = sectionNavItems[i].id
-                      const group = getBriefSectionGroup(title)
-                      const pieces = []
-                      if (group && group !== prevGroup) {
-                        pieces.push(
-                          <p
-                            key={`group-${id}`}
-                            className="section-group-label"
-                          >
-                            {group === 'interview'
-                              ? 'Interview preparation'
-                              : 'Company context'}
-                          </p>,
-                        )
-                        prevGroup = group
-                      } else if (!group) {
-                        prevGroup = null
-                      }
-                      pieces.push(
-                        <BriefSectionCard
-                          key={id}
-                          id={id}
-                          title={title}
-                          chunk={chunk}
-                          markdownComponents={markdownComponents}
-                        />,
-                      )
-                      return pieces
-                    })
-                  })()
+                  briefSections.map((chunk, i) => {
+                    const item = sectionNavItems[i]
+                    if (item.navGroup !== briefTab) return null
+                    return (
+                      <BriefSectionCard
+                        key={item.id}
+                        id={item.id}
+                        title={item.title}
+                        chunk={chunk}
+                        markdownComponents={markdownComponents}
+                      />
+                    )
+                  })
                 )}
               </div>
             </div>

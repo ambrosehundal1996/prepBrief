@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
   prepareBriefSectionBodyForRender,
@@ -9,6 +9,16 @@ import {
 function stripLeadingSectionHeading(md) {
   if (typeof md !== 'string') return ''
   return md.replace(/^##[^\n]+\n+/, '').trimStart()
+}
+
+/**
+ * react-markdown strips unknown URL schemes by default, which erases our
+ * internal prepbrief: marker URLs (badges / labels) before the custom
+ * components see them. Allow them through; sanitize everything else.
+ */
+function briefUrlTransform(url) {
+  if (typeof url === 'string' && url.startsWith('prepbrief:')) return url
+  return defaultUrlTransform(url)
 }
 
 function ClipboardIcon() {
@@ -70,7 +80,11 @@ export function BriefSectionCard({ id, title, chunk, markdownComponents }) {
         </div>
       </div>
       <div className="markdown-output">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={markdownComponents}
+          urlTransform={briefUrlTransform}
+        >
           {prepared}
         </ReactMarkdown>
       </div>
