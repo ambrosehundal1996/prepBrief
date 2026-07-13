@@ -113,36 +113,6 @@ export function getBriefSectionGroup(sectionTitle) {
   return null
 }
 
-/** Personalized sections blurred for non-paid users (title-based lock map). */
-const FULLY_LOCKED_KEYS = [
-  'tell me about yourself',
-  'which projects to highlight',
-  'conversation hooks',
-  'interview positioning',
-  'brief summary',
-  'why us',
-  "why i'm interested",
-]
-
-/** Only the Behavioral group is blurred; role/company questions stay visible. */
-const BEHAVIORAL_LOCKED_KEYS = [
-  "what they're likely to ask you",
-  'what they are likely to ask you',
-]
-
-/**
- * Lock level for a section when the user is not paid.
- * @returns {'full' | 'behavioral' | null}
- */
-export function getBriefSectionLock(sectionTitle) {
-  const n = normalizeTitle(sectionTitle)
-  if (FULLY_LOCKED_KEYS.some((k) => n.includes(k) || n === k)) return 'full'
-  if (BEHAVIORAL_LOCKED_KEYS.some((k) => n.includes(k) || n === k)) {
-    return 'behavioral'
-  }
-  return null
-}
-
 /**
  * "Jump to" nav metadata: short one-line labels decoupled from the full
  * section headers, plus the nav group ('prep' before 'company').

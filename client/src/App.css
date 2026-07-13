@@ -728,48 +728,6 @@ main#top {
   font-size: 0.85em;
 }
 
-/* ── Free-tier locked sections (blur overlay) ── */
-
-.brief-lock-wrap {
-  position: relative;
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.brief-locked-content {
-  filter: blur(7px);
-  user-select: none;
-  pointer-events: none;
-  opacity: 0.75;
-}
-
-.brief-lock-overlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.25) 0%,
-    rgba(255, 255, 255, 0.55) 100%
-  );
-}
-
-.brief-lock-overlay-label {
-  display: inline-block;
-  padding: 0.5rem 0.9rem;
-  border-radius: 999px;
-  border: 1px solid rgba(30, 58, 138, 0.22);
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 4px 16px rgba(30, 58, 138, 0.12);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: #1e3a8a;
-  text-align: center;
-}
-
 .resume-file-input {
   position: absolute;
   width: 0;
@@ -1183,12 +1141,6 @@ main#top {
   text-transform: uppercase;
   letter-spacing: 0.09em;
   color: #b6bcc7;
-}
-
-.toc-lock {
-  flex: 0 0 auto;
-  margin-left: 0.4rem;
-  opacity: 0.55;
 }
 
 .toc-vertical-list {

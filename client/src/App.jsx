@@ -9,10 +9,8 @@ import {
   extractStickyBriefHeader,
   getBriefNavMeta,
   getBriefSectionGroup,
-  getBriefSectionLock,
   stripStructuralInstructionLines,
 } from './briefDisplay'
-import { isPaid } from './gating'
 import {
   MAX_SAVED_BRIEFS,
   deleteBriefFromHistory,
@@ -135,7 +133,6 @@ export default function App() {
   const [clientError, setClientError] = useState('')
   const [apiError, setApiError] = useState('')
   const [markdown, setMarkdown] = useState(null)
-  const [briefHadResume, setBriefHadResume] = useState(true)
   const [responseTimeMs, setResponseTimeMs] = useState(null)
   const [savedBriefs, setSavedBriefs] = useState(() => loadBriefHistory())
   const [savedBriefsPanelOpen, setSavedBriefsPanelOpen] = useState(false)
@@ -316,7 +313,6 @@ export default function App() {
     setPhaseText('')
     scrollOnStreamRef.current = false
     setActiveSavedId(null)
-    setBriefHadResume(Boolean(resumeFile))
 
     const endpoint = apiUrl('/api/research/stream')
     const t0 = performance.now()
@@ -473,7 +469,6 @@ export default function App() {
           title,
           navLabel: label,
           navGroup: group,
-          locked: !isPaid() && getBriefSectionLock(title) !== null,
         }
       }),
     [briefSections],
@@ -894,31 +889,6 @@ export default function App() {
                                 aria-current={isActive ? 'location' : undefined}
                               >
                                 {item.navLabel}
-                                {item.locked && (
-                                  <svg
-                                    className="toc-lock"
-                                    width="10"
-                                    height="10"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="2.5"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    aria-label="(locked)"
-                                    role="img"
-                                  >
-                                    <rect
-                                      x="3"
-                                      y="11"
-                                      width="18"
-                                      height="11"
-                                      rx="2"
-                                      ry="2"
-                                    />
-                                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                                  </svg>
-                                )}
                               </a>
                             </li>
                           )
@@ -935,16 +905,11 @@ export default function App() {
                   </article>
                 ) : (
                   (() => {
-                    const paid = isPaid()
-                    const lockLabel = briefHadResume
-                      ? 'Unlock the personalized sections — paid access coming soon'
-                      : 'Generic — add your resume to personalize'
                     let prevGroup = null
                     return briefSections.flatMap((chunk, i) => {
                       const title = getSectionTitle(chunk)
                       const id = sectionNavItems[i].id
                       const group = getBriefSectionGroup(title)
-                      const lock = paid ? null : getBriefSectionLock(title)
                       const pieces = []
                       if (group && group !== prevGroup) {
                         pieces.push(
@@ -968,8 +933,6 @@ export default function App() {
                           title={title}
                           chunk={chunk}
                           markdownComponents={markdownComponents}
-                          lock={lock}
-                          lockLabel={lockLabel}
                         />,
                       )
                       return pieces
