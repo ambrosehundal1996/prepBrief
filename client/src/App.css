@@ -38,7 +38,7 @@
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 1rem;
-  max-width: 1200px;
+  max-width: 1360px;
   margin: 0 auto;
   padding: 0.65rem 1.25rem;
   min-height: 3.5rem;
@@ -199,10 +199,10 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  max-width: 960px;
+  max-width: 1200px;
   width: 100%;
   margin: 0 auto;
-  padding: 1.75rem 1.25rem 3rem;
+  padding: 1.75rem 1.5rem 3rem;
 }
 
 .site-header {
@@ -950,7 +950,7 @@ main#top {
 
 @media (min-width: 840px) {
   .brief-layout:not(.brief-layout--content-only) {
-    grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr);
+    grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr);
   }
 
   .toc-vertical {
@@ -1397,9 +1397,9 @@ main#top {
 }
 
 .site-footer-inner {
-  max-width: 960px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 2rem 1.25rem 2.25rem;
+  padding: 2rem 1.5rem 2.25rem;
 }
 
 .site-footer-top {
