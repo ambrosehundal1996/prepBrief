@@ -112,8 +112,7 @@ Interview stage for this brief: {{INTERVIEW_STAGE}}
 (hiring_manager = depth: projects, behavioral stories, strategy.
 recruiter_screen = altitude: resume walkthrough at a high level,
 motivation, logistics readiness — if set, compress "Which projects to
-highlight" and "Interview positioning", and expand "Tell me about
-yourself" and "Why us".)
+highlight", and expand "Tell me about yourself" and "Why us".)
 
 ═══════════════════════════════════════
 INPUTS
@@ -139,10 +138,7 @@ HARD RULES
      never beats speakability here.
    - Hiring manager's voice: 1-2 sentences. Your narrative: 2 sentences.
 4. Every company fact comes from the research object and carries its
-   date where time-sensitive: (May 2026). Where a source_url exists
-   for a hook or big-bet fact, include it as a markdown link on that
-   bullet — the link invites the candidate to genuinely engage with
-   the source, not just cite it.
+   date in parentheses where time-sensitive: (May 2026).
 5. NEVER fabricate. Unsupported bullet → omit it. Never output the words
    "Not found". If an entire section is unsupported, replace its content
    with ONE line converting the gap into an action, e.g.: "Little public
@@ -193,8 +189,9 @@ domain expert), explicit tech or domain callouts.
 
 STEP 3 — CROSS-ANALYZE:
 - TOP 3 MATCHES: named resume experience → named JD requirement.
-- TOP 2 GAPS: honest shortfalls — these drive the Watch-out flags.
-  If no real gaps exist, note that internally and omit Watch-outs.
+- TOP 2 GAPS: honest shortfalls — these drive the Watch-out flags AND
+  the "If they probe the gap" block in Tell me about yourself.
+  If no real gaps exist, note that internally and omit both.
 - STORY BANK: the 3-4 resume projects/situations usable for behavioral
   questions. Tag each with what it proves (conflict, ownership,
   ambiguity, failure, leadership, scale).
@@ -204,11 +201,40 @@ STEP 3 — CROSS-ANALYZE:
 STEP 4 — every section traces back to this analysis. Advice that
 ignores it is a failure.
 
-Output starts directly with "## What they're likely to ask you".
+Output starts directly with "## Tell me about yourself".
 
 ═══════════════════════════════════════
 OUTPUT STRUCTURE (exact order)
 ═══════════════════════════════════════
+
+## Tell me about yourself
+
+First section by design: this is the only answer guaranteed to be asked
+and fully pre-plannable. A strong TMAY built on resume×JD overlap frames
+the whole interview — follow-ups flow from ground the candidate chose.
+
+**Your angle:** (resume + JD required)
+2-3 bullets — how to position yourself for THIS role. Built from CORE
+NARRATIVE and TOP 3 MATCHES. Each bullet: named resume experience →
+what this role needs. Max 15 words each.
+
+**Say it like this:**
+- Open with: [specific background to lead with — max 15 words]
+- Middle: [thread the strongest matches into one story — max 15 words]
+- Close with: [tie to this company's current focus, from the research
+  object — max 15 words]
+
+**Phrases to mirror from the job description:** (JD required)
+- [3-4 verbatim JD phrases worth echoing — in this answer and beyond]
+
+**If they probe the gap:** (only when TOP 2 GAPS holds real gaps —
+otherwise omit this block entirely)
+- [likely concern about your background → proactive one-line defusal,
+  speakable, max 25 words]
+
+End the section with this line, verbatim:
+"Everything you mention here, you're inviting them to ask about.
+Mention only what you want follow-up questions on."
 
 ## What they're likely to ask you
 
@@ -229,17 +255,6 @@ a single combined group of role/company questions instead)
   - Why they ask: [one line]
   - How to answer: [angle specific to this company/role — max 25 words]
   - Watch out: [only if a real gap exists]
-
-## Tell me about yourself
-
-Talking points and structure — never a paragraph to memorize. Built
-from CORE NARRATIVE and TOP 3 MATCHES.
-
-**Your talking points:**
-- Open with: [specific background to lead with — max 15 words]
-- Middle: [thread the strongest matches into one story — max 15 words]
-- Close with: [tie to this company's current focus, from the research
-  object — max 15 words]
 
 ## Which projects to highlight
 (JD required)
@@ -277,47 +292,14 @@ Rules:
   impressed-per-second hook type.
 - Fewer than 3 hook-worthy recent facts in the research object → output
   fewer hooks. Never pad with stale or generic material.
-- Each hook's fact line links its source_url when available, labeled
-  by type: 🔗 article / podcast / blog post. Frame links as prep
-  homework: 20 minutes with one source beats memorizing five facts.
-- Add this fixed line at the end of the section, verbatim:
-  "Use one hook, naturally, where it fits. Stacking researched facts
-  reads as performing homework — one genuine reference beats three
-  recited ones."
 
 ## Questions to ask them
 
-5-7 questions, each ready to ask aloud (max 25 words each), in three
-labeled groups:
-
-**Show you read the JD** (1-2 questions)
-- Format: "I saw [verbatim JD phrase] in the description — how does
-  that look in practice day to day?" Interviewers consistently report
-  most candidates never read the JD; these questions prove it cheaply
-  and authentically.
-
-**Show you understand their strategy** (2-3 questions)
-- Probe the big bet / current initiatives from the research object.
-  Proper nouns required.
-
-**Closers** (1-2 questions — universal but high-signal; exempt from
-the "could apply to any company" rule)
-- Choose from: expectations for the first 3-6 months; what success
-  looks like in this role at [timeframe]; and the concerns question:
-  "Based on our conversation, do you have any concerns about my fit
-  I could speak to?" — always offer this last one; it surfaces
-  objections while the candidate can still address them.
-
-Still banned: culture/perks filler with no signal.
-
-## Interview positioning
-(JD required)
-
-**Skills and experience to highlight:**
-- [four bullets, each naming specific resume experience]
-
-**Phrases to mirror from the job description:**
-- [four bullets — verbatim JD phrases worth echoing]
+5-7 questions, each ready to ask aloud (max 25 words each).
+- 2-3 must probe the big bet / current strategy (signals seniority).
+- 2-3 must be role-specific, derived from the JD.
+- Proper nouns wherever possible. No "what's the culture like" filler.
+- Where natural, one question may build on a conversation hook.
 
 ## The company's current big bet
 
@@ -329,10 +311,6 @@ product, expansion, or pivot from the research object, with dates.
 Exactly 2 bullets, one sentence each:
 - What the company does and who they serve
 - The concrete problem that existed before them
-
-**Go deeper (optional):** up to 3 links — the company's own site,
-plus the 1-2 highest-value sources from the research object (best
-recent article, best exec interview). One line each, labeled.
 
 ## Brief summary
 
@@ -381,6 +359,8 @@ FINAL CHECK (fix failures before responding)
 - Length tiers respected: 15 default / 25 spoken / prose only where marked.
 - Every behavioral question has a "Use this story" line naming a real
   resume item.
+- Tell me about yourself is the FIRST section; its closing framing line
+  appears verbatim; gap block only present when a real gap exists.
 - Every hook has a date, nothing over 6 months, at most one risky hook
   (labeled), ranked by rarity.
 - No fabrication, no "Not found" strings, gaps converted to actions.

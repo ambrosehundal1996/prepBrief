@@ -984,47 +984,18 @@ main#top {
   color: #9ca3af;
 }
 
-/* ── Brief view toggle: Role specific / Company overview ── */
-
-.brief-tabs {
-  display: inline-flex;
-  gap: 4px;
-  margin: 0 0 1rem;
-  padding: 4px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(229, 231, 235, 0.95);
-  border-radius: 999px;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+.toc-group + .toc-group {
+  margin-top: 0.85rem;
 }
 
-.brief-tab-btn {
-  appearance: none;
-  border: 1px solid transparent;
-  background: transparent;
-  border-radius: 999px;
-  padding: 0.45rem 1.05rem;
-  font-size: 0.8125rem;
+/* Subordinate to .toc-vertical-title: one step smaller, same treatment. */
+.toc-group-label {
+  margin: 0 0 0.35rem 0.2rem;
+  font-size: 0.625rem;
   font-weight: 600;
-  color: var(--pb-ink-muted);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 140ms ease, color 140ms ease;
-}
-
-.brief-tab-btn:hover {
-  color: var(--pb-ink);
-  background: rgba(37, 99, 235, 0.06);
-}
-
-.brief-tab-btn--active {
-  background: rgba(37, 99, 235, 0.12);
-  border-color: rgba(37, 99, 235, 0.22);
-  color: var(--pb-ink);
-}
-
-.brief-tab-btn:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.28);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: #b6bcc7;
 }
 
 .toc-vertical-list {
