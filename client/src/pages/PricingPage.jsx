@@ -1,21 +1,25 @@
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { useState } from 'react'
+import { useAuth } from '../context/AuthContext.jsx'
 
 const tiers = [
   {
+    id: 'free',
     name: 'Free',
     price: '$0',
     tagline: 'Try it out',
     featured: false,
     features: [
-      'Unlimited briefs',
+      '3 briefs total',
       'Company research sections',
       'Predicted interview questions',
       'Why us talking points',
     ],
     cta: 'Get started free',
-    ctaTo: '/#create-brief',
+    plan: null,
   },
   {
+    id: 'job_seeker',
     name: 'Job Seeker',
     price: '$9',
     period: '/ month',
@@ -25,16 +29,17 @@ const tiers = [
     features: [
       '20 briefs per month',
       'Everything in Free',
-      'JD matching sections',
+      'Full personalized sections',
       'Tell me about yourself framework',
       'Which projects to highlight',
-      'Interview positioning',
+      'Conversation hooks',
       'Save and revisit briefs',
     ],
     cta: 'Start for $9/month',
-    ctaTo: '/#create-brief',
+    plan: 'job_seeker',
   },
   {
+    id: 'intensive',
     name: 'Intensive',
     price: '$19',
     period: '/ month',
@@ -43,16 +48,35 @@ const tiers = [
     features: [
       'Unlimited briefs',
       'Everything in Job Seeker',
-      'Resume upload for personalized output',
-      'Your strongest talking points section',
-      'Priority generation speed',
+      'Resume-powered personalization',
+      'Priority generation',
     ],
     cta: 'Start for $19/month',
-    ctaTo: '/#create-brief',
+    plan: 'intensive',
   },
 ]
 
 export default function PricingPage() {
+  const navigate = useNavigate()
+  const { user, configured, startCheckout } = useAuth()
+  const [loadingPlan, setLoadingPlan] = useState(null)
+  const [error, setError] = useState('')
+
+  async function handlePaidClick(plan) {
+    setError('')
+    if (!user) {
+      navigate('/signup')
+      return
+    }
+    setLoadingPlan(plan)
+    try {
+      await startCheckout(plan)
+    } catch (e) {
+      setError(e.message || 'Could not start checkout.')
+      setLoadingPlan(null)
+    }
+  }
+
   return (
     <main className="marketing-page" aria-labelledby="pricing-heading">
       <div className="marketing-page-inner marketing-page-inner--wide">
@@ -60,8 +84,14 @@ export default function PricingPage() {
           Simple pricing
         </h1>
         <p className="marketing-lead">
-          Start free. Upgrade when you&apos;re ready.
+          3 free briefs when you sign up. Upgrade when you need more.
         </p>
+
+        {error && (
+          <p className="message message-error pricing-error" role="alert">
+            {error}
+          </p>
+        )}
 
         <div className="pricing-grid">
           {tiers.map((tier) => (
@@ -89,20 +119,36 @@ export default function PricingPage() {
                   <li key={f}>{f}</li>
                 ))}
               </ul>
-              <Link to={tier.ctaTo} className="pricing-tier-cta btn-primary">
-                {tier.cta}
-              </Link>
+              {tier.plan ? (
+                <button
+                  type="button"
+                  className="pricing-tier-cta btn-primary"
+                  disabled={loadingPlan === tier.plan}
+                  onClick={() => handlePaidClick(tier.plan)}
+                >
+                  {loadingPlan === tier.plan ? 'Redirecting…' : tier.cta}
+                </button>
+              ) : (
+                <Link
+                  to={configured && !user ? '/signup' : '/#create-brief'}
+                  className="pricing-tier-cta btn-primary"
+                >
+                  {tier.cta}
+                </Link>
+              )}
             </article>
           ))}
         </div>
 
         <p className="pricing-footnote">
-          No credit card required to start. Cancel anytime.
+          No credit card required for the free tier. Cancel paid plans anytime.
         </p>
-        <p className="pricing-disclaimer">
-          Paid tiers describe planned product packaging. Today you can use
-          PrepBrief at no cost with no generation cap.
-        </p>
+        {!configured && (
+          <p className="pricing-disclaimer">
+            Payments require Stripe configuration on the server. Auth and usage
+            limits are enforced once Supabase is connected.
+          </p>
+        )}
       </div>
     </main>
   )

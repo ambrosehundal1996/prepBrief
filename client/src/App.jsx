@@ -7,12 +7,16 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Routes, Route, Link } from 'react-router-dom'
+import { Routes, Route, Link, useNavigate } from 'react-router-dom'
 import { BriefSectionCard } from './BriefSectionCard'
 import { TopNav } from './components/TopNav.jsx'
+import { useAuth } from './context/AuthContext.jsx'
 import AboutPage from './pages/AboutPage.jsx'
 import HowItWorksPage from './pages/HowItWorksPage.jsx'
 import PricingPage from './pages/PricingPage.jsx'
+import LoginPage from './pages/LoginPage.jsx'
+import SignUpPage from './pages/SignUpPage.jsx'
+import CheckoutSuccessPage from './pages/CheckoutSuccessPage.jsx'
 import {
   extractStickyBriefHeader,
   getBriefNavMeta,
@@ -132,6 +136,23 @@ const PHASE_NARRATION = {
 }
 
 export default function App() {
+  const navigate = useNavigate()
+  const {
+    configured: authConfigured,
+    user,
+    accessToken,
+    account,
+    loading: authLoading,
+    refreshAccount,
+  } = useAuth()
+
+  const needsSignIn = authConfigured && !authLoading && !user
+  const atFreeLimit =
+    authConfigured &&
+    account?.configured &&
+    account.canGenerate === false &&
+    (account.plan === 'free' || !account.subscriptionStatus)
+
   const [jobMode, setJobMode] = useState('url') // 'url' | 'paste' | 'file'
   const [jobUrl, setJobUrl] = useState('')
   const [jobText, setJobText] = useState('')
@@ -351,6 +372,19 @@ export default function App() {
       }
     }
 
+    if (needsSignIn) {
+      setClientError('Sign in or create an account to generate a brief.')
+      navigate('/signup')
+      return
+    }
+
+    if (atFreeLimit) {
+      setClientError(
+        'You have used all 3 free briefs. Upgrade on the pricing page to keep generating.',
+      )
+      return
+    }
+
     setLoading(true)
     setMarkdown('')
     streamMdRef.current = ''
@@ -379,11 +413,16 @@ export default function App() {
     })
 
     try {
+      const headers = {
+        Accept: 'text/event-stream',
+      }
+      if (accessToken) {
+        headers.Authorization = `Bearer ${accessToken}`
+      }
+
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: {
-          Accept: 'text/event-stream',
-        },
+        headers,
         body: formData,
       })
 
@@ -392,9 +431,23 @@ export default function App() {
         console.log('[prepbrief] stream request failed', {
           status: res.status,
           error: data.error,
+          code: data.code,
           elapsedMs: Math.round(performance.now() - t0),
         })
         setMarkdown(null)
+        if (res.status === 401) {
+          setClientError('Please sign in to generate a brief.')
+          navigate('/login')
+          return
+        }
+        if (res.status === 402) {
+          setClientError(
+            data.error ||
+              'You have used all free briefs. Upgrade to keep generating.',
+          )
+          if (accessToken) void refreshAccount(accessToken)
+          return
+        }
         setApiError(
           typeof data.error === 'string'
             ? data.error
@@ -486,6 +539,7 @@ export default function App() {
             markdown: finalMd,
           })
           setSavedBriefs(items)
+          if (accessToken) void refreshAccount(accessToken)
         }
       }
     } catch (err) {
@@ -921,11 +975,49 @@ export default function App() {
             </div>
           )}
 
+          {authConfigured && user && account?.configured && (
+            <p className="usage-banner" role="status">
+              {account.limit == null ? (
+                <>Unlimited briefs on your {account.plan.replace('_', ' ')} plan.</>
+              ) : (
+                <>
+                  {account.remaining ?? 0} of {account.limit} brief
+                  {(account.limit ?? 0) === 1 ? '' : 's'} remaining
+                  {account.plan === 'free' ? ' (free tier)' : ' this month'}.
+                </>
+              )}
+            </p>
+          )}
+
+          {needsSignIn && (
+            <div className="paywall-card" role="status">
+              <p className="paywall-title">Sign in to generate your brief</p>
+              <p className="paywall-copy">
+                Create a free account — 3 briefs included, no credit card.
+              </p>
+              <Link to="/signup" className="btn-primary paywall-cta">
+                Create free account
+              </Link>
+            </div>
+          )}
+
+          {atFreeLimit && (
+            <div className="paywall-card" role="status">
+              <p className="paywall-title">You&apos;ve used all 3 free briefs</p>
+              <p className="paywall-copy">
+                Upgrade to keep generating personalized interview prep.
+              </p>
+              <Link to="/pricing" className="btn-primary paywall-cta">
+                View plans →
+              </Link>
+            </div>
+          )}
+
           <div className="submit-row">
         <button
               type="submit"
               className="btn-primary"
-              disabled={loading}
+              disabled={loading || needsSignIn || atFreeLimit}
             >
               Generate my brief →
             </button>
@@ -1457,6 +1549,12 @@ export default function App() {
               <Route path="/about" element={<AboutPage />} />
               <Route path="/how-it-works" element={<HowItWorksPage />} />
               <Route path="/pricing" element={<PricingPage />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/signup" element={<SignUpPage />} />
+              <Route
+                path="/checkout/success"
+                element={<CheckoutSuccessPage />}
+              />
             </Routes>
           </div>
 

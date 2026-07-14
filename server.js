@@ -19,6 +19,18 @@ const {
   extractDocumentText,
   MAX_FILE_BYTES,
 } = require("./resumeExtract");
+const { requireAuth, optionalAuth } = require("./authMiddleware");
+const {
+  getAccountForUser,
+  assertCanGenerate,
+  recordBriefGenerated,
+} = require("./userUsage");
+const {
+  createCheckoutSession,
+  handleStripeWebhook,
+  isStripeConfigured,
+} = require("./stripeHandlers");
+const { isSupabaseAdminConfigured } = require("./supabaseAdmin");
 
 const MAX_JOB_DESCRIPTION_CHARS = 80_000;
 
@@ -220,6 +232,24 @@ const corsOptions = process.env.FRONTEND_URL
 app.set("trust proxy", 1);
 
 app.use(cors(corsOptions));
+
+// Stripe webhook needs the raw body — must be registered before express.json()
+app.post(
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    try {
+      const signature = req.headers["stripe-signature"];
+      await handleStripeWebhook(req.body, signature);
+      res.json({ received: true });
+    } catch (err) {
+      console.error("[stripe] webhook error", err.message || err);
+      const status = err.code === "STRIPE_SIGNATURE_INVALID" ? 400 : 500;
+      res.status(status).json({ error: err.message || "Webhook failed." });
+    }
+  },
+);
+
 app.use(express.json());
 
 function sendHealth(req, res) {
@@ -230,13 +260,61 @@ app.get("/health", sendHealth);
 /** Same handler under /api for unified Vercel deploy (SPA rewrite keeps /health on index.html). */
 app.get("/api/health", sendHealth);
 
-app.post("/api/research", withResearchUpload, async (req, res) => {
+/** Account + usage (auth required when Supabase is configured). */
+app.get("/api/account", optionalAuth, async (req, res) => {
+  const account = await getAccountForUser(req.user);
+  res.json(account);
+});
+
+/** Create Stripe Checkout session for a paid plan. */
+app.post("/api/stripe/checkout", requireAuth, async (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({
+      error: "Sign in required.",
+      code: "AUTH_REQUIRED",
+    });
+  }
+  if (!isStripeConfigured()) {
+    return res.status(503).json({
+      error: "Payments are not configured yet. Contact support.",
+      code: "STRIPE_NOT_CONFIGURED",
+    });
+  }
+
+  const plan = req.body?.plan;
+  if (plan !== "job_seeker" && plan !== "intensive") {
+    return res.status(400).json({
+      error: 'plan must be "job_seeker" or "intensive".',
+    });
+  }
+
+  try {
+    const session = await createCheckoutSession(req.user, plan);
+    res.json(session);
+  } catch (err) {
+    console.error("[stripe] checkout session failed", err);
+    res.status(500).json({
+      error: err.message || "Could not start checkout.",
+      code: err.code || "CHECKOUT_FAILED",
+    });
+  }
+});
+
+app.post("/api/research", requireAuth, withResearchUpload, async (req, res) => {
   const reqId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
   const parsed = await parseResearchPayload(req);
   if (parsed.error) {
     console.log(`[api:${reqId}] POST /api/research rejected: ${parsed.error}`);
     return res.status(400).json({ error: parsed.error });
+  }
+
+  const gate = await assertCanGenerate(req.user);
+  if (!gate.ok) {
+    return res.status(gate.status).json({
+      error: gate.error,
+      code: gate.code,
+    });
   }
 
   const { job, companyUrlOpt, resumeText, resumeMeta } = parsed;
@@ -300,6 +378,9 @@ app.post("/api/research", withResearchUpload, async (req, res) => {
       ...tokenFieldsForSheet(tokenUsage),
       ...sheetResumeFields(resumeMeta, resumeText),
     });
+    if (req.user?.id) {
+      await recordBriefGenerated(req.user.id);
+    }
     res.json({ markdown });
   } catch (err) {
     const elapsedMs = Date.now() - t0;
@@ -371,7 +452,7 @@ app.post("/api/research", withResearchUpload, async (req, res) => {
   }
 });
 
-app.post("/api/research/stream", withResearchUpload, async (req, res) => {
+app.post("/api/research/stream", requireAuth, withResearchUpload, async (req, res) => {
   const reqId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
   const parsed = await parseResearchPayload(req);
@@ -380,6 +461,14 @@ app.post("/api/research/stream", withResearchUpload, async (req, res) => {
       `[api:${reqId}] POST /api/research/stream rejected: ${parsed.error}`,
     );
     return res.status(400).json({ error: parsed.error });
+  }
+
+  const gate = await assertCanGenerate(req.user);
+  if (!gate.ok) {
+    return res.status(gate.status).json({
+      error: gate.error,
+      code: gate.code,
+    });
   }
 
   const { job, companyUrlOpt, resumeText, resumeMeta } = parsed;
@@ -441,6 +530,9 @@ app.post("/api/research/stream", withResearchUpload, async (req, res) => {
     });
 
     if (streamResult?.ok) {
+      if (req.user?.id) {
+        await recordBriefGenerated(req.user.id);
+      }
       logFromRequest(req, {
         requestId: reqId,
         endpoint: "/api/research/stream",
@@ -544,8 +636,20 @@ function startServer() {
   app.listen(PORT, () => {
     console.log(`Server listening on http://localhost:${PORT}`);
     console.log(
-      "API: GET /health, GET /api/health, POST /api/research, POST /api/research/stream",
+      "API: GET /health, GET /api/account, POST /api/stripe/checkout, POST /api/stripe/webhook, POST /api/research, POST /api/research/stream",
     );
+    if (isSupabaseAdminConfigured()) {
+      console.log("[auth] Supabase auth + usage tracking enabled.");
+    } else {
+      console.log(
+        "[auth] Supabase not configured — brief generation is open without sign-in.",
+      );
+    }
+    if (isStripeConfigured()) {
+      console.log("[stripe] Checkout + webhooks enabled.");
+    } else {
+      console.log("[stripe] Payments disabled (set STRIPE_SECRET_KEY).");
+    }
     if (isSheetsConfigured()) {
       console.log("[sheets] Usage logging to Google Sheets is enabled.");
     } else {

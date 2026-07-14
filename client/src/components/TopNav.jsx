@@ -1,5 +1,6 @@
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { PREPBRIEF_LOGO_SRC } from '../brand.js'
+import { useAuth } from '../context/AuthContext.jsx'
 
 function marketingLinkClass({ isActive }) {
   return isActive
@@ -25,6 +26,7 @@ export function TopNav({
   const navigate = useNavigate()
   const location = useLocation()
   const onHome = location.pathname === '/'
+  const { configured, user, account, signOut, loading: authLoading } = useAuth()
 
   const handleResumeClick = () => {
     if (onHome) {
@@ -111,6 +113,36 @@ export function TopNav({
           <NavLink to="/pricing" className={marketingLinkClass}>
             Pricing
           </NavLink>
+          {configured && !authLoading && (
+            user ? (
+              <>
+                {account?.configured && account.limit != null && (
+                  <span className="top-nav-usage" title="Briefs remaining">
+                    {account.remaining ?? 0} left
+                  </span>
+                )}
+                <span className="top-nav-user" title={user.email}>
+                  {user.email?.split('@')[0] || 'Account'}
+                </span>
+                <button
+                  type="button"
+                  className="top-nav-link top-nav-link--muted top-nav-signout"
+                  onClick={() => void signOut()}
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <>
+                <NavLink to="/login" className={marketingLinkClass}>
+                  Sign in
+                </NavLink>
+                <Link to="/signup" className="top-nav-cta">
+                  Sign up
+                </Link>
+              </>
+            )
+          )}
         </nav>
       </div>
     </header>
