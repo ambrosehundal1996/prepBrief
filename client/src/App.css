@@ -234,6 +234,42 @@
   line-height: 1.5;
 }
 
+.hero-auth {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem 0.85rem;
+  margin-top: 1.15rem;
+}
+
+.hero-auth-primary {
+  text-decoration: none;
+}
+
+.hero-auth-secondary {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--pb-accent);
+  text-decoration: none;
+}
+
+.hero-auth-secondary:hover {
+  text-decoration: underline;
+}
+
+.hero-auth-hint {
+  flex: 1 1 100%;
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--pb-page-fg-muted);
+}
+
+.hero-auth-hint code {
+  font-size: 0.72rem;
+}
+
 .home-founder-story {
   margin: 1.5rem 0 0;
   padding: 1rem 1.15rem;
@@ -742,6 +778,29 @@ main#top {
   display: inline-block;
   margin-top: 0.75rem;
   text-decoration: none;
+}
+
+.paywall-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+  margin-top: 0.75rem;
+}
+
+.paywall-actions .paywall-cta {
+  margin-top: 0;
+}
+
+.paywall-secondary {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--pb-accent);
+  text-decoration: none;
+}
+
+.paywall-secondary:hover {
+  text-decoration: underline;
 }
 
 .usage-banner {

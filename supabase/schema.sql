@@ -52,3 +52,31 @@ create policy "prepbrief_users_read_own_profile"
   using (auth.uid() = id);
 
 -- Server uses service_role key (bypasses RLS) for writes and usage checks.
+
+-- ---------------------------------------------------------------------------
+-- Saved briefs (per user)
+-- ---------------------------------------------------------------------------
+create table if not exists public.prepbrief_briefs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  job_url text not null default '',
+  company_name text,
+  markdown text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists prepbrief_briefs_user_id_created_at_idx
+  on public.prepbrief_briefs (user_id, created_at desc);
+
+alter table public.prepbrief_briefs enable row level security;
+
+drop policy if exists "prepbrief_users_read_own_briefs" on public.prepbrief_briefs;
+create policy "prepbrief_users_read_own_briefs"
+  on public.prepbrief_briefs for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "prepbrief_users_delete_own_briefs" on public.prepbrief_briefs;
+create policy "prepbrief_users_delete_own_briefs"
+  on public.prepbrief_briefs for delete
+  using (auth.uid() = user_id);

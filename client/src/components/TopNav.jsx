@@ -26,7 +26,7 @@ export function TopNav({
   const navigate = useNavigate()
   const location = useLocation()
   const onHome = location.pathname === '/'
-  const { configured, user, account, signOut, loading: authLoading } = useAuth()
+  const { user, account, signOut, loading: authLoading } = useAuth()
 
   const handleResumeClick = () => {
     if (onHome) {
@@ -113,7 +113,7 @@ export function TopNav({
           <NavLink to="/pricing" className={marketingLinkClass}>
             Pricing
           </NavLink>
-          {configured && !authLoading && (
+          {!authLoading && (
             user ? (
               <>
                 {account?.configured && account.limit != null && (

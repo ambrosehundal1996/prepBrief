@@ -30,6 +30,12 @@ const {
   handleStripeWebhook,
   isStripeConfigured,
 } = require("./stripeHandlers");
+const {
+  saveUserBrief,
+  listUserBriefs,
+  deleteUserBrief,
+  migrateUserBriefs,
+} = require("./userBriefs");
 const { isSupabaseAdminConfigured } = require("./supabaseAdmin");
 
 const MAX_JOB_DESCRIPTION_CHARS = 80_000;
@@ -266,6 +272,45 @@ app.get("/api/account", optionalAuth, async (req, res) => {
   res.json(account);
 });
 
+/** List saved briefs for the signed-in user. */
+app.get("/api/briefs", requireAuth, async (req, res) => {
+  if (!req.user?.id) {
+    return res.status(401).json({
+      error: "Sign in required.",
+      code: "AUTH_REQUIRED",
+    });
+  }
+  const briefs = await listUserBriefs(req.user.id);
+  res.json({ briefs });
+});
+
+/** One-time migrate briefs from browser localStorage. */
+app.post("/api/briefs/migrate", requireAuth, async (req, res) => {
+  if (!req.user?.id) {
+    return res.status(401).json({
+      error: "Sign in required.",
+      code: "AUTH_REQUIRED",
+    });
+  }
+  const briefs = await migrateUserBriefs(req.user.id, req.body?.briefs);
+  res.json({ briefs });
+});
+
+/** Delete a saved brief. */
+app.delete("/api/briefs/:id", requireAuth, async (req, res) => {
+  if (!req.user?.id) {
+    return res.status(401).json({
+      error: "Sign in required.",
+      code: "AUTH_REQUIRED",
+    });
+  }
+  const ok = await deleteUserBrief(req.user.id, req.params.id);
+  if (!ok) {
+    return res.status(500).json({ error: "Could not delete brief." });
+  }
+  res.json({ ok: true });
+});
+
 /** Create Stripe Checkout session for a paid plan. */
 app.post("/api/stripe/checkout", requireAuth, async (req, res) => {
   if (!req.user) {
@@ -380,6 +425,10 @@ app.post("/api/research", requireAuth, withResearchUpload, async (req, res) => {
     });
     if (req.user?.id) {
       await recordBriefGenerated(req.user.id);
+      await saveUserBrief(req.user.id, {
+        jobUrl: job.jobUrl || "",
+        markdown,
+      });
     }
     res.json({ markdown });
   } catch (err) {
@@ -532,6 +581,10 @@ app.post("/api/research/stream", requireAuth, withResearchUpload, async (req, re
     if (streamResult?.ok) {
       if (req.user?.id) {
         await recordBriefGenerated(req.user.id);
+        await saveUserBrief(req.user.id, {
+          jobUrl: job.jobUrl || "",
+          markdown: streamResult.markdown || "",
+        });
       }
       logFromRequest(req, {
         requestId: reqId,
@@ -636,7 +689,7 @@ function startServer() {
   app.listen(PORT, () => {
     console.log(`Server listening on http://localhost:${PORT}`);
     console.log(
-      "API: GET /health, GET /api/account, POST /api/stripe/checkout, POST /api/stripe/webhook, POST /api/research, POST /api/research/stream",
+      "API: GET /health, GET /api/account, GET /api/briefs, POST /api/briefs/migrate, DELETE /api/briefs/:id, POST /api/stripe/checkout, POST /api/stripe/webhook, POST /api/research, POST /api/research/stream",
     );
     if (isSupabaseAdminConfigured()) {
       console.log("[auth] Supabase auth + usage tracking enabled.");

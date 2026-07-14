@@ -29,6 +29,10 @@ import {
   saveBriefToHistory,
 } from './briefHistory'
 import {
+  deleteUserBrief,
+  syncBriefsForUser,
+} from './lib/briefApi.js'
+import {
   clearStoredResume,
   loadStoredResumeFile,
   saveStoredResume,
@@ -147,6 +151,7 @@ export default function App() {
   } = useAuth()
 
   const needsSignIn = authConfigured && !authLoading && !user
+  const showAuthPrompt = !authLoading && !user
   const atFreeLimit =
     authConfigured &&
     account?.configured &&
@@ -241,14 +246,33 @@ export default function App() {
     }, 150)
   }, [])
 
-  const handleDeleteSaved = useCallback((id) => {
-    const next = deleteBriefFromHistory(id)
-    setSavedBriefs(next)
-    if (activeSavedId === id) {
-      setActiveSavedId(null)
-      setMarkdown(null)
-    }
-  }, [activeSavedId])
+  const handleDeleteSaved = useCallback(
+    async (id) => {
+      if (user && accessToken) {
+        try {
+          await deleteUserBrief(accessToken, id)
+          const items = await syncBriefsForUser(
+            accessToken,
+            user.id,
+            [],
+          )
+          setSavedBriefs(items)
+        } catch (err) {
+          console.warn('[prepbrief] delete brief failed', err)
+          setClientError('Could not delete that brief. Try again.')
+          return
+        }
+      } else {
+        const next = deleteBriefFromHistory(id)
+        setSavedBriefs(next)
+      }
+      if (activeSavedId === id) {
+        setActiveSavedId(null)
+        setMarkdown(null)
+      }
+    },
+    [activeSavedId, user, accessToken],
+  )
 
   const openSavedBriefsPanel = useCallback(() => {
     setResumePanelOpen(false)
@@ -316,6 +340,26 @@ export default function App() {
       console.warn('[prepbrief] could not persist resume to this browser', err)
     })
   }, [resumeFile])
+
+  useEffect(() => {
+    if (!user?.id || !accessToken) {
+      setSavedBriefs(loadBriefHistory())
+      return undefined
+    }
+
+    let cancelled = false
+    void syncBriefsForUser(accessToken, user.id, loadBriefHistory())
+      .then((items) => {
+        if (!cancelled) setSavedBriefs(items)
+      })
+      .catch((err) => {
+        console.warn('[prepbrief] could not sync briefs', err)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id, accessToken])
 
   const resumePreviewUrl = useMemo(() => {
     if (!resumeFile) return null
@@ -534,12 +578,20 @@ export default function App() {
       } else {
         const finalMd = streamMdRef.current.trim()
         if (finalMd) {
-          const { items } = saveBriefToHistory({
-            jobUrl: trimmedJob,
-            markdown: finalMd,
-          })
-          setSavedBriefs(items)
-          if (accessToken) void refreshAccount(accessToken)
+          if (user && accessToken) {
+            void syncBriefsForUser(accessToken, user.id, [])
+              .then(setSavedBriefs)
+              .catch((err) => {
+                console.warn('[prepbrief] could not refresh saved briefs', err)
+              })
+            void refreshAccount(accessToken)
+          } else {
+            const { items } = saveBriefToHistory({
+              jobUrl: trimmedJob,
+              markdown: finalMd,
+            })
+            setSavedBriefs(items)
+          }
         }
       }
     } catch (err) {
@@ -752,6 +804,24 @@ export default function App() {
               A brief built from your resume and their job description — not
               generic advice. Ready in 60 seconds.
             </p>
+            {showAuthPrompt && (
+              <div className="hero-auth">
+                <Link to="/signup" className="btn-primary hero-auth-primary">
+                  Create free account — 3 briefs included
+                </Link>
+                <Link to="/login" className="hero-auth-secondary">
+                  Sign in
+                </Link>
+                {!authConfigured && (
+                  <p className="hero-auth-hint">
+                    Auth requires{' '}
+                    <code>VITE_SUPABASE_URL</code> and{' '}
+                    <code>VITE_SUPABASE_ANON_KEY</code> in{' '}
+                    <code>client/.env</code>, then restart the dev server.
+                  </p>
+                )}
+              </div>
+            )}
           </header>
         )}
 
@@ -995,9 +1065,14 @@ export default function App() {
               <p className="paywall-copy">
                 Create a free account — 3 briefs included, no credit card.
               </p>
-              <Link to="/signup" className="btn-primary paywall-cta">
-                Create free account
-              </Link>
+              <div className="paywall-actions">
+                <Link to="/signup" className="btn-primary paywall-cta">
+                  Create free account
+                </Link>
+                <Link to="/login" className="paywall-secondary">
+                  Sign in
+                </Link>
+              </div>
             </div>
           )}
 
@@ -1059,7 +1134,11 @@ export default function App() {
           >
             {activeSavedId && (
               <div className="history-banner" role="status">
-                <span>Viewing a saved brief from this browser.</span>
+                <span>
+                  {user
+                    ? 'Viewing a saved brief from your account.'
+                    : 'Viewing a saved brief from this browser.'}
+                </span>
                 <button
                   type="button"
                   className="history-banner-dismiss"
