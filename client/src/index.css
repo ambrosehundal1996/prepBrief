@@ -11,6 +11,19 @@
   --pb-chrome-bg: rgba(8, 17, 35, 0.94);
   --pb-chrome-border: rgba(148, 163, 184, 0.18);
   --pb-chrome-inset: rgba(255, 255, 255, 0.06);
+
+  /* Accent palette — one blue for every interactive/active state */
+  --pb-accent: #2563eb;
+  --pb-accent-strong: #1e40af;
+  --pb-highlight: #38bdf8;
+
+  /* Ink scale — text on light cards */
+  --pb-ink: #0f172a;
+  --pb-ink-muted: #475569;
+  --pb-ink-faint: #94a3b8;
+
+  /* Type */
+  --pb-font-display: 'Sora', 'Source Sans 3', system-ui, sans-serif;
 }
 
 html {

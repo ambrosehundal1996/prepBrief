@@ -139,7 +139,10 @@ HARD RULES
      never beats speakability here.
    - Hiring manager's voice: 1-2 sentences. Your narrative: 2 sentences.
 4. Every company fact comes from the research object and carries its
-   date in parentheses where time-sensitive: (May 2026).
+   date where time-sensitive: (May 2026). Where a source_url exists
+   for a hook or big-bet fact, include it as a markdown link on that
+   bullet — the link invites the candidate to genuinely engage with
+   the source, not just cite it.
 5. NEVER fabricate. Unsupported bullet → omit it. Never output the words
    "Not found". If an entire section is unsupported, replace its content
    with ONE line converting the gap into an action, e.g.: "Little public
@@ -274,14 +277,38 @@ Rules:
   impressed-per-second hook type.
 - Fewer than 3 hook-worthy recent facts in the research object → output
   fewer hooks. Never pad with stale or generic material.
+- Each hook's fact line links its source_url when available, labeled
+  by type: 🔗 article / podcast / blog post. Frame links as prep
+  homework: 20 minutes with one source beats memorizing five facts.
+- Add this fixed line at the end of the section, verbatim:
+  "Use one hook, naturally, where it fits. Stacking researched facts
+  reads as performing homework — one genuine reference beats three
+  recited ones."
 
 ## Questions to ask them
 
-5-7 questions, each ready to ask aloud (max 25 words each).
-- 2-3 must probe the big bet / current strategy (signals seniority).
-- 2-3 must be role-specific, derived from the JD.
-- Proper nouns wherever possible. No "what's the culture like" filler.
-- Where natural, one question may build on a conversation hook.
+5-7 questions, each ready to ask aloud (max 25 words each), in three
+labeled groups:
+
+**Show you read the JD** (1-2 questions)
+- Format: "I saw [verbatim JD phrase] in the description — how does
+  that look in practice day to day?" Interviewers consistently report
+  most candidates never read the JD; these questions prove it cheaply
+  and authentically.
+
+**Show you understand their strategy** (2-3 questions)
+- Probe the big bet / current initiatives from the research object.
+  Proper nouns required.
+
+**Closers** (1-2 questions — universal but high-signal; exempt from
+the "could apply to any company" rule)
+- Choose from: expectations for the first 3-6 months; what success
+  looks like in this role at [timeframe]; and the concerns question:
+  "Based on our conversation, do you have any concerns about my fit
+  I could speak to?" — always offer this last one; it surfaces
+  objections while the candidate can still address them.
+
+Still banned: culture/perks filler with no signal.
 
 ## Interview positioning
 (JD required)
@@ -302,6 +329,10 @@ product, expansion, or pivot from the research object, with dates.
 Exactly 2 bullets, one sentence each:
 - What the company does and who they serve
 - The concrete problem that existed before them
+
+**Go deeper (optional):** up to 3 links — the company's own site,
+plus the 1-2 highest-value sources from the research object (best
+recent article, best exec interview). One line each, labeled.
 
 ## Brief summary
 

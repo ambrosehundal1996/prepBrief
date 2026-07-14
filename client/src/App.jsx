@@ -616,72 +616,21 @@ export default function App() {
   return (
     <div className="layout">
       <div className="layout-shell">
-        <aside className="sidebar" aria-label="Site">
-          <Link to="/" className="sidebar-brand">
-            <img
-              src={PREPBRIEF_LOGO_SRC}
-              alt=""
-              className="sidebar-logo"
-              decoding="async"
-            />
-            <span className="visually-hidden">PrepBrief</span>
-          </Link>
-          <p className="sidebar-nav-label">Navigate</p>
-          <nav className="sidebar-nav" aria-label="Main navigation">
-            <Link
-              to="/#create-brief"
-              className="sidebar-link"
-              onClick={() => {
-                setSavedBriefsPanelOpen(false)
-                setResumePanelOpen(false)
-              }}
-            >
-              Create brief
-            </Link>
-            {markdown !== null && (
-              <Link
-                to="/#your-brief"
-                className="sidebar-link"
-                onClick={() => {
-                  setSavedBriefsPanelOpen(false)
-                  setResumePanelOpen(false)
-                }}
-              >
-                Your brief
-              </Link>
-            )}
-            <button
-              type="button"
-              className={
-                resumePanelOpen
-                  ? 'sidebar-link sidebar-link--active'
-                  : 'sidebar-link'
-              }
-              aria-expanded={resumePanelOpen}
-              onClick={toggleResumePanel}
-            >
-              My resume
-            </button>
-            <button
-              type="button"
-              className={
-                savedBriefsPanelOpen
-                  ? 'sidebar-link sidebar-link--muted sidebar-link--active'
-                  : 'sidebar-link sidebar-link--muted'
-              }
-              aria-expanded={savedBriefsPanelOpen}
-              onClick={toggleSavedBriefsPanel}
-            >
-              Saved briefs
-              {savedBriefs.length > 0 && (
-                <span className="sidebar-count">{savedBriefs.length}</span>
-              )}
-            </button>
-          </nav>
-        </aside>
-
         <div className="layout-main">
-          <TopNav />
+          <TopNav
+            hasBrief={markdown !== null}
+            savedBriefsCount={savedBriefs.length}
+            resumePanelOpen={resumePanelOpen}
+            savedBriefsPanelOpen={savedBriefsPanelOpen}
+            onClosePanels={() => {
+              setSavedBriefsPanelOpen(false)
+              setResumePanelOpen(false)
+            }}
+            onToggleResumePanel={toggleResumePanel}
+            onOpenResumePanel={openResumePanel}
+            onToggleSavedBriefsPanel={toggleSavedBriefsPanel}
+            onOpenSavedBriefsPanel={openSavedBriefsPanel}
+          />
           <div className="app">
             <Routes>
               <Route
@@ -697,16 +646,7 @@ export default function App() {
               A brief built from your resume and their job description — not
               generic advice. Ready in 60 seconds.
             </p>
-            <p className="site-moat">Built from your resume and their job description.</p>
-            <p className="site-cta-line">Don&apos;t reschedule. Get ready.</p>
           </header>
-        )}
-
-        {!savedBriefsPanelOpen && !resumePanelOpen && (
-          <blockquote className="home-founder-story">
-            I used to reschedule interviews when I didn&apos;t feel ready. So I
-            built the thing that makes me feel ready in 60 seconds.
-          </blockquote>
         )}
 
         <main id="top">
@@ -800,8 +740,8 @@ export default function App() {
                 Without a resume you still get the company research; with one,
                 every section is tailored to your background. After you upload
                 once, we keep your resume in this browser. Use{' '}
-                <strong>My resume</strong> in the sidebar to preview or replace
-                it.
+                <strong>My resume</strong> in the top navigation to preview or
+                replace it.
               </p>
             </div>
           )}
@@ -834,6 +774,13 @@ export default function App() {
             </p>
           )}
         </form>
+        )}
+
+        {!savedBriefsPanelOpen && !resumePanelOpen && (
+          <blockquote className="home-founder-story">
+            I used to reschedule interviews when I didn&apos;t feel ready. So I
+            built the thing that makes me feel ready in 60 seconds.
+          </blockquote>
         )}
 
         {markdown !== null && (
