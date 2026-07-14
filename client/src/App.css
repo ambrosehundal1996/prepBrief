@@ -1292,6 +1292,67 @@ main#top {
   color: #334155;
 }
 
+/* ── Collapsible detail bullets (lead line + expandable sub-bullets) ── */
+
+.brief-li-collapsible {
+  list-style: none;
+  margin-left: -1.25rem; /* reclaim the ul padding — the chevron is the marker */
+}
+
+.brief-details {
+  border-radius: 8px;
+}
+
+.brief-details-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  cursor: pointer;
+  list-style: none;
+  padding: 0.15rem 0.3rem;
+  margin: 0 -0.3rem;
+  border-radius: 8px;
+  transition: background 0.12s ease;
+}
+
+.brief-details-summary::-webkit-details-marker {
+  display: none;
+}
+
+.brief-details-summary::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 0.4rem;
+  height: 0.4rem;
+  margin-top: 0.1rem;
+  border-right: 2px solid var(--pb-accent);
+  border-bottom: 2px solid var(--pb-accent);
+  transform: rotate(-45deg);
+  transform-origin: center;
+  transition: transform 0.15s ease;
+  align-self: center;
+}
+
+.brief-details[open] > .brief-details-summary::before {
+  transform: rotate(45deg);
+}
+
+.brief-details-summary:hover {
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.brief-details-summary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.28);
+}
+
+.brief-details > ul,
+.brief-details > ol {
+  margin-top: 0.35rem;
+  margin-bottom: 0.25rem;
+  padding-left: 1.6rem;
+}
+
 .markdown-output hr {
   border: none;
   border-top: 1px solid rgba(37, 99, 235, 0.12);

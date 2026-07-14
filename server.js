@@ -14,31 +14,44 @@ const {
   isSheetsConfigured,
   tokenFieldsForSheet,
 } = require("./googleSheetsLogger");
-const { extractResumeText, MAX_FILE_BYTES } = require("./resumeExtract");
+const {
+  extractResumeText,
+  extractDocumentText,
+  MAX_FILE_BYTES,
+} = require("./resumeExtract");
 
 const MAX_JOB_DESCRIPTION_CHARS = 80_000;
 
-function normalizeJobInputs(body) {
+/**
+ * Exactly one job input is required: URL, pasted text, or text extracted
+ * from an uploaded job-description document.
+ * @param {object} body request body
+ * @param {string} [jdFromFile] text extracted from an uploaded JD file
+ */
+function normalizeJobInputs(body, jdFromFile) {
   const jobUrlRaw = typeof body?.jobUrl === "string" ? body.jobUrl.trim() : "";
-  const jdRaw =
+  const jdPasted =
     typeof body?.jobDescriptionText === "string"
       ? body.jobDescriptionText.trim()
       : "";
+  const jdFile = typeof jdFromFile === "string" ? jdFromFile.trim() : "";
 
-  if (jobUrlRaw && jdRaw) {
+  const provided = [jobUrlRaw, jdPasted, jdFile].filter(Boolean).length;
+  if (provided > 1) {
     return {
       error:
-        "Provide either jobUrl or pasted job description text, not both.",
+        "Provide exactly one job input: a job URL, pasted job description text, or an uploaded job description file.",
     };
   }
 
-  if (!jobUrlRaw && !jdRaw) {
+  if (provided === 0) {
     return {
       error:
-        "jobUrl is required (or provide jobDescriptionText if pasting the posting).",
+        "jobUrl is required (or provide jobDescriptionText / a jobDescription file with the posting).",
     };
   }
 
+  const jdRaw = jdPasted || jdFile;
   if (jdRaw.length > MAX_JOB_DESCRIPTION_CHARS) {
     return {
       error: `Pasted job description is too long (max ${MAX_JOB_DESCRIPTION_CHARS.toLocaleString()} characters).`,
@@ -97,21 +110,24 @@ function sseLine(obj) {
   return `data: ${JSON.stringify(obj)}\n\n`;
 }
 
-const resumeUpload = multer({
+const researchUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_FILE_BYTES },
-}).fields([{ name: "resume", maxCount: 1 }]);
+}).fields([
+  { name: "resume", maxCount: 1 },
+  { name: "jobDescriptionFile", maxCount: 1 },
+]);
 
-function withResumeUpload(req, res, next) {
-  resumeUpload(req, res, (err) => {
+function withResearchUpload(req, res, next) {
+  researchUpload(req, res, (err) => {
     if (!err) return next();
     if (err.code === "LIMIT_FILE_SIZE") {
       return res.status(400).json({
-        error: `Resume file is too large (max ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB).`,
+        error: `Uploaded file is too large (max ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB).`,
       });
     }
     return res.status(400).json({
-      error: err.message || "Resume upload failed.",
+      error: err.message || "File upload failed.",
     });
   });
 }
@@ -121,7 +137,25 @@ function withResumeUpload(req, res, next) {
  * @returns {Promise<{ error: string } | { job: object, companyUrlOpt?: string, resumeText: string | null, resumeMeta: { attached: boolean, chars: number, truncated: boolean } }>}
  */
 async function parseResearchPayload(req) {
-  const job = normalizeJobInputs(req.body);
+  // Uploaded JD document → text, then validated alongside URL / pasted text.
+  let jdFromFile;
+  const jdFile = req.files?.jobDescriptionFile?.[0];
+  if (jdFile) {
+    const jdResult = await extractDocumentText(
+      jdFile.buffer,
+      jdFile.mimetype,
+      jdFile.originalname,
+      { label: "job description", maxChars: MAX_JOB_DESCRIPTION_CHARS },
+    );
+    if (!jdResult.ok) return { error: jdResult.error };
+    jdFromFile = jdResult.text;
+    console.log("[api] job description extracted from upload", {
+      chars: jdResult.text.length,
+      truncated: Boolean(jdResult.truncated),
+    });
+  }
+
+  const job = normalizeJobInputs(req.body, jdFromFile);
   if (job.error) return { error: job.error };
   const companyUrlOpt = optionalCompanyUrl(req.body);
   const file = req.files?.resume?.[0];
@@ -196,7 +230,7 @@ app.get("/health", sendHealth);
 /** Same handler under /api for unified Vercel deploy (SPA rewrite keeps /health on index.html). */
 app.get("/api/health", sendHealth);
 
-app.post("/api/research", withResumeUpload, async (req, res) => {
+app.post("/api/research", withResearchUpload, async (req, res) => {
   const reqId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
   const parsed = await parseResearchPayload(req);
@@ -337,7 +371,7 @@ app.post("/api/research", withResumeUpload, async (req, res) => {
   }
 });
 
-app.post("/api/research/stream", withResumeUpload, async (req, res) => {
+app.post("/api/research/stream", withResearchUpload, async (req, res) => {
   const reqId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
   const parsed = await parseResearchPayload(req);

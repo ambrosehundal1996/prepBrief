@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Children,
+  isValidElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { Routes, Route, Link } from 'react-router-dom'
 import { BriefSectionCard } from './BriefSectionCard'
 import { TopNav } from './components/TopNav.jsx'
@@ -124,7 +132,11 @@ const PHASE_NARRATION = {
 }
 
 export default function App() {
+  const [jobMode, setJobMode] = useState('url') // 'url' | 'paste' | 'file'
   const [jobUrl, setJobUrl] = useState('')
+  const [jobText, setJobText] = useState('')
+  const [jobFile, setJobFile] = useState(null)
+  const [jobFileDragActive, setJobFileDragActive] = useState(false)
   const [resumeFile, setResumeFile] = useState(null)
   const [resumeDragActive, setResumeDragActive] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -143,8 +155,25 @@ export default function App() {
   const scrollOnStreamRef = useRef(false)
   const streamMdRef = useRef('')
   const resumeInputRef = useRef(null)
+  const jobFileInputRef = useRef(null)
   const demoVideoInputRef = useRef(null)
   const [demoVideoFile, setDemoVideoFile] = useState(null)
+
+  const setJobFileFromFileList = useCallback((fileList) => {
+    const file = fileList?.[0]
+    if (!file) return
+    if (!isAllowedResumeFile(file)) {
+      setClientError('Please upload the job description as a PDF or .docx file.')
+      return
+    }
+    setClientError('')
+    setJobFile(file)
+  }, [])
+
+  const switchJobMode = useCallback((mode) => {
+    setJobMode(mode)
+    setClientError('')
+  }, [])
 
   const setResumeFromFileList = useCallback((fileList) => {
     const file = fileList?.[0]
@@ -295,15 +324,32 @@ export default function App() {
     setClientError('')
     setApiError('')
 
-    const trimmedJob = jobUrl.trim()
-    if (!trimmedJob) {
-      setClientError('Please enter a job posting URL.')
-      return
-    }
+    const trimmedJob = jobMode === 'url' ? jobUrl.trim() : ''
+    const trimmedJobText = jobMode === 'paste' ? jobText.trim() : ''
 
-    if (!isValidHttpUrl(trimmedJob)) {
-      setClientError('Please enter a valid job posting URL (including https://).')
-      return
+    if (jobMode === 'url') {
+      if (!trimmedJob) {
+        setClientError('Please enter a job posting URL.')
+        return
+      }
+      if (!isValidHttpUrl(trimmedJob)) {
+        setClientError(
+          'Please enter a valid job posting URL (including https://).',
+        )
+        return
+      }
+    } else if (jobMode === 'paste') {
+      if (trimmedJobText.length < 100) {
+        setClientError(
+          'Please paste the full job description (at least a few sentences).',
+        )
+        return
+      }
+    } else if (jobMode === 'file') {
+      if (!jobFile) {
+        setClientError('Please upload the job description as a PDF or .docx.')
+        return
+      }
     }
 
     setLoading(true)
@@ -318,12 +364,19 @@ export default function App() {
     const endpoint = apiUrl('/api/research/stream')
     const t0 = performance.now()
     const formData = new FormData()
-    formData.append('jobUrl', trimmedJob)
+    if (jobMode === 'url') {
+      formData.append('jobUrl', trimmedJob)
+    } else if (jobMode === 'paste') {
+      formData.append('jobDescriptionText', trimmedJobText)
+    } else {
+      formData.append('jobDescriptionFile', jobFile)
+    }
     if (resumeFile) formData.append('resume', resumeFile)
 
     console.log('[prepbrief] Generate Brief: streaming POST', {
       endpoint,
-      jobUrl: trimmedJob,
+      jobMode,
+      jobUrl: trimmedJob || undefined,
       hasResume: Boolean(resumeFile),
     })
 
@@ -564,6 +617,29 @@ export default function App() {
           <table {...props}>{children}</table>
         </div>
       ),
+      // Bullets with nested detail bullets collapse behind the lead line, so
+      // the brief scans as headlines and expands on demand.
+      li: (props) => {
+        // eslint-disable-next-line no-unused-vars
+        const { children, node, ...rest } = props
+        const kids = Children.toArray(children)
+        const nestedIdx = kids.findIndex(
+          (child) =>
+            isValidElement(child) &&
+            (child.type === 'ul' || child.type === 'ol'),
+        )
+        if (nestedIdx === -1) return <li {...rest}>{children}</li>
+        return (
+          <li className="brief-li-collapsible" {...rest}>
+            <details className="brief-details">
+              <summary className="brief-details-summary">
+                {kids.slice(0, nestedIdx)}
+              </summary>
+              {kids.slice(nestedIdx)}
+            </details>
+          </li>
+        )
+      },
       img: ({ src, alt, ...rest }) => {
         if (src === 'prepbrief:badge-likely') {
           return (
@@ -670,18 +746,141 @@ export default function App() {
           noValidate
         >
           <div className="field">
-            <label htmlFor="jobUrl">Job posting URL</label>
-            <input
-              id="jobUrl"
-              name="jobUrl"
-              type="url"
-              inputMode="url"
-              autoComplete="off"
-              placeholder="https://jobs.lever.co/… or Greenhouse, Ashby, LinkedIn, etc."
-              value={jobUrl}
-              onChange={(ev) => setJobUrl(ev.target.value)}
-              disabled={loading}
-            />
+            <span className="field-label" id="job-input-heading">
+              Job posting
+            </span>
+            <div
+              className="job-mode-toggle"
+              role="group"
+              aria-labelledby="job-input-heading"
+            >
+              {[
+                { key: 'url', label: 'Link' },
+                { key: 'paste', label: 'Paste text' },
+                { key: 'file', label: 'Upload file' },
+              ].map((mode) => (
+                <button
+                  key={mode.key}
+                  type="button"
+                  className={
+                    jobMode === mode.key
+                      ? 'job-mode-btn job-mode-btn-active'
+                      : 'job-mode-btn'
+                  }
+                  aria-pressed={jobMode === mode.key}
+                  disabled={loading}
+                  onClick={() => switchJobMode(mode.key)}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
+
+            {jobMode === 'url' && (
+              <input
+                id="jobUrl"
+                name="jobUrl"
+                type="url"
+                inputMode="url"
+                autoComplete="off"
+                aria-label="Job posting URL"
+                placeholder="https://jobs.lever.co/… or Greenhouse, Ashby, LinkedIn, etc."
+                value={jobUrl}
+                onChange={(ev) => setJobUrl(ev.target.value)}
+                disabled={loading}
+              />
+            )}
+
+            {jobMode === 'paste' && (
+              <textarea
+                id="jobText"
+                name="jobDescriptionText"
+                aria-label="Job description text"
+                placeholder="Paste the full job description here — title, responsibilities, requirements…"
+                value={jobText}
+                onChange={(ev) => setJobText(ev.target.value)}
+                disabled={loading}
+              />
+            )}
+
+            {jobMode === 'file' && (
+              <>
+                <input
+                  ref={jobFileInputRef}
+                  id="jobFile"
+                  name="jobDescriptionFile"
+                  type="file"
+                  accept={RESUME_ACCEPT}
+                  className="resume-file-input"
+                  tabIndex={-1}
+                  disabled={loading}
+                  aria-label="Job description file: PDF or .docx"
+                  onChange={(ev) => setJobFileFromFileList(ev.target.files)}
+                />
+                <button
+                  type="button"
+                  className="resume-dropzone"
+                  disabled={loading}
+                  data-active={jobFileDragActive ? 'true' : undefined}
+                  onClick={() => jobFileInputRef.current?.click()}
+                  onKeyDown={(ev) => {
+                    if (ev.key === 'Enter' || ev.key === ' ') {
+                      ev.preventDefault()
+                      jobFileInputRef.current?.click()
+                    }
+                  }}
+                  onDragEnter={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setJobFileDragActive(true)
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setJobFileDragActive(false)
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setJobFileDragActive(false)
+                    setJobFileFromFileList(e.dataTransfer.files)
+                  }}
+                >
+                  <span className="resume-dropzone__main">
+                    {jobFile ? (
+                      <strong>{jobFile.name}</strong>
+                    ) : (
+                      'Drop the job description here or click to browse'
+                    )}
+                    <span className="resume-dropzone__sub">
+                      PDF or .docx of the job posting
+                    </span>
+                  </span>
+                </button>
+                {jobFile && (
+                  <div className="resume-actions">
+                    <button
+                      type="button"
+                      className="btn-text"
+                      disabled={loading}
+                      onClick={() => {
+                        setJobFile(null)
+                        if (jobFileInputRef.current) {
+                          jobFileInputRef.current.value = ''
+                        }
+                      }}
+                    >
+                      Remove file
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+
             <p className="field-hint">
               Built from your resume and their job description. We read the
               posting, then generate your prep brief — predicted questions,

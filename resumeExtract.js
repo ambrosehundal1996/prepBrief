@@ -12,19 +12,21 @@ function extFromName(name) {
 }
 
 /**
+ * Shared PDF/.docx → text extraction for uploaded documents.
  * @param {Buffer} buffer
- * @param {string} [mimetype]
- * @param {string} [originalname]
+ * @param {string | undefined} mimetype
+ * @param {string | undefined} originalname
+ * @param {{ label: string, maxChars: number }} opts label appears in user-facing errors ("resume", "job description")
  * @returns {Promise<{ ok: true, text: string, truncated: boolean } | { ok: false, error: string }>}
  */
-async function extractResumeText(buffer, mimetype, originalname) {
+async function extractDocumentText(buffer, mimetype, originalname, { label, maxChars }) {
   if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
-    return { ok: false, error: "Resume file is empty." };
+    return { ok: false, error: `The ${label} file is empty.` };
   }
   if (buffer.length > MAX_FILE_BYTES) {
     return {
       ok: false,
-      error: `Resume file is too large (max ${MAX_FILE_BYTES / 1024 / 1024} MB).`,
+      error: `The ${label} file is too large (max ${MAX_FILE_BYTES / 1024 / 1024} MB).`,
     };
   }
 
@@ -52,7 +54,7 @@ async function extractResumeText(buffer, mimetype, originalname) {
   if (!isPdf && !isDocx) {
     return {
       ok: false,
-      error: "Unsupported file type. Please upload a PDF or .docx resume.",
+      error: `Unsupported file type. Please upload a PDF or .docx ${label}.`,
     };
   }
 
@@ -73,27 +75,37 @@ async function extractResumeText(buffer, mimetype, originalname) {
     if (!normalized || normalized.length < 20) {
       return {
         ok: false,
-        error:
-          "Could not extract readable text from this file. Try a text-based PDF or .docx, or export your resume again.",
+        error: `Could not extract readable text from this file. Try a text-based PDF or .docx, or export your ${label} again.`,
       };
     }
 
-    const truncated = normalized.length > MAX_RESUME_CHARS;
-    const text = truncated
-      ? normalized.slice(0, MAX_RESUME_CHARS)
-      : normalized;
+    const truncated = normalized.length > maxChars;
+    const text = truncated ? normalized.slice(0, maxChars) : normalized;
     return { ok: true, text, truncated };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.warn("[resumeExtract] failed", msg);
+    console.warn(`[docExtract:${label}] failed`, msg);
     return {
       ok: false,
-      error: "Could not read this resume file. Try PDF or .docx.",
+      error: `Could not read this ${label} file. Try PDF or .docx.`,
     };
   }
 }
 
+/**
+ * @param {Buffer} buffer
+ * @param {string} [mimetype]
+ * @param {string} [originalname]
+ */
+function extractResumeText(buffer, mimetype, originalname) {
+  return extractDocumentText(buffer, mimetype, originalname, {
+    label: "resume",
+    maxChars: MAX_RESUME_CHARS,
+  });
+}
+
 module.exports = {
+  extractDocumentText,
   extractResumeText,
   MAX_RESUME_CHARS,
   MAX_FILE_BYTES,
