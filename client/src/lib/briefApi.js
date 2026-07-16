@@ -83,6 +83,19 @@ export function markBriefsMigrated(userId) {
 /**
  * Load briefs for a signed-in user; one-time migrate from localStorage if needed.
  */
+export async function submitBriefLogFeedback(logId, { feedback, rating }) {
+  const res = await fetch(apiUrl(`/api/brief-logs/${encodeURIComponent(logId)}/feedback`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ feedback, rating }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || 'Could not save feedback.')
+  }
+  return data
+}
+
 export async function syncBriefsForUser(accessToken, userId, localBriefs) {
   if (!hasMigratedBriefs(userId) && localBriefs.length > 0) {
     const migrated = await migrateLocalBriefs(accessToken, localBriefs)

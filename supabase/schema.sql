@@ -80,3 +80,41 @@ drop policy if exists "prepbrief_users_delete_own_briefs" on public.prepbrief_br
 create policy "prepbrief_users_delete_own_briefs"
   on public.prepbrief_briefs for delete
   using (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------------------
+-- Brief generation logs (admin visibility during user testing)
+-- user_id is optional — logs anonymous generations too.
+-- No RLS policies: only service_role (server) can read/write.
+-- ---------------------------------------------------------------------------
+create table if not exists public.prepbrief_brief_logs (
+  id uuid primary key default gen_random_uuid(),
+  request_id text,
+  user_id uuid references auth.users (id) on delete set null,
+  user_email text,
+  plan text,
+  endpoint text not null,
+  job_url text not null default '',
+  company_url text,
+  markdown text not null,
+  elapsed_ms int,
+  input_tokens int,
+  output_tokens int,
+  resume_attached boolean not null default false,
+  feedback text,
+  rating smallint check (rating is null or (rating >= 1 and rating <= 10)),
+  feedback_submitted_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists prepbrief_brief_logs_created_at_idx
+  on public.prepbrief_brief_logs (created_at desc);
+
+create index if not exists prepbrief_brief_logs_user_id_idx
+  on public.prepbrief_brief_logs (user_id);
+
+alter table public.prepbrief_brief_logs enable row level security;
+
+-- If prepbrief_brief_logs already exists without feedback columns, run:
+-- alter table public.prepbrief_brief_logs add column if not exists feedback text;
+-- alter table public.prepbrief_brief_logs add column if not exists rating smallint check (rating is null or (rating >= 1 and rating <= 10));
+-- alter table public.prepbrief_brief_logs add column if not exists feedback_submitted_at timestamptz;

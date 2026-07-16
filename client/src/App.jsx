@@ -30,6 +30,7 @@ import {
 } from './briefHistory'
 import {
   deleteUserBrief,
+  submitBriefLogFeedback,
   syncBriefsForUser,
 } from './lib/briefApi.js'
 import {
@@ -150,13 +151,13 @@ export default function App() {
     refreshAccount,
   } = useAuth()
 
-  const needsSignIn = authConfigured && !authLoading && !user
-  const showAuthPrompt = !authLoading && !user
   const atFreeLimit =
     authConfigured &&
     account?.configured &&
     account.canGenerate === false &&
     (account.plan === 'free' || !account.subscriptionStatus)
+  const needsSignIn = authConfigured && !authLoading && !user
+  const showAuthPrompt = !authLoading && !user
 
   const [jobMode, setJobMode] = useState('url') // 'url' | 'paste' | 'file'
   const [jobUrl, setJobUrl] = useState('')
@@ -184,6 +185,12 @@ export default function App() {
   const jobFileInputRef = useRef(null)
   const demoVideoInputRef = useRef(null)
   const [demoVideoFile, setDemoVideoFile] = useState(null)
+  const [briefLogId, setBriefLogId] = useState(null)
+  const [feedbackRating, setFeedbackRating] = useState('')
+  const [feedbackText, setFeedbackText] = useState('')
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false)
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false)
+  const [feedbackError, setFeedbackError] = useState('')
 
   const setJobFileFromFileList = useCallback((fileList) => {
     const file = fileList?.[0]
@@ -236,6 +243,9 @@ export default function App() {
     setResponseTimeMs(null)
     setJobUrl(entry.jobUrl)
     setActiveSavedId(entry.id)
+    setBriefLogId(null)
+    setFeedbackSubmitted(false)
+    setFeedbackError('')
     setApiError('')
     setClientError('')
     window.setTimeout(() => {
@@ -272,6 +282,34 @@ export default function App() {
       }
     },
     [activeSavedId, user, accessToken],
+  )
+
+  const handleSubmitFeedback = useCallback(
+    async (ev) => {
+      ev.preventDefault()
+      if (!briefLogId || feedbackSubmitted) return
+
+      const rating = Number(feedbackRating)
+      if (!Number.isInteger(rating) || rating < 1 || rating > 10) {
+        setFeedbackError('Please choose a rating from 1 to 10.')
+        return
+      }
+
+      setFeedbackSubmitting(true)
+      setFeedbackError('')
+      try {
+        await submitBriefLogFeedback(briefLogId, {
+          rating,
+          feedback: feedbackText.trim() || null,
+        })
+        setFeedbackSubmitted(true)
+      } catch (err) {
+        setFeedbackError(err.message || 'Could not save feedback.')
+      } finally {
+        setFeedbackSubmitting(false)
+      }
+    },
+    [briefLogId, feedbackRating, feedbackText, feedbackSubmitted],
   )
 
   const openSavedBriefsPanel = useCallback(() => {
@@ -436,6 +474,11 @@ export default function App() {
     setPhaseText('')
     scrollOnStreamRef.current = false
     setActiveSavedId(null)
+    setBriefLogId(null)
+    setFeedbackRating('')
+    setFeedbackText('')
+    setFeedbackSubmitted(false)
+    setFeedbackError('')
 
     const endpoint = apiUrl('/api/research/stream')
     const t0 = performance.now()
@@ -558,6 +601,8 @@ export default function App() {
                 totalElapsedMs: totalMs,
                 serverElapsedMs: payload.elapsedMs,
               })
+            } else if (payload.type === 'logged' && payload.logId) {
+              setBriefLogId(payload.logId)
             } else if (payload.type === 'error') {
               streamError =
                 typeof payload.message === 'string'
@@ -801,8 +846,8 @@ export default function App() {
               Walk into your interview knowing what they&apos;ll ask.
             </h1>
             <p className="tagline">
-              A brief built from your resume and their job description — not
-              generic advice. Ready in 60 seconds.
+              Paste the job link. We research the company and read your resume.
+              You get a game plan in 60 seconds.
             </p>
             {showAuthPrompt && (
               <div className="hero-auth">
@@ -838,6 +883,28 @@ export default function App() {
           aria-label="Resume file: PDF or .docx, optional — personalizes your brief"
           onChange={(ev) => setResumeFromFileList(ev.target.files)}
         />
+        {!savedBriefsPanelOpen && !resumePanelOpen && (
+        <ol className="hero-steps" aria-label="How it works">
+          <li className="hero-step">
+            <span className="hero-step-icon" aria-hidden="true">
+              1️⃣
+            </span>
+            <span className="hero-step-label">Paste the job link</span>
+          </li>
+          <li className="hero-step">
+            <span className="hero-step-icon" aria-hidden="true">
+              2️⃣
+            </span>
+            <span className="hero-step-label">Add your resume</span>
+          </li>
+          <li className="hero-step">
+            <span className="hero-step-icon" aria-hidden="true">
+              3️⃣
+            </span>
+            <span className="hero-step-label">Get your brief</span>
+          </li>
+        </ol>
+        )}
         {!savedBriefsPanelOpen && !resumePanelOpen && (
         <form
           id="create-brief"
@@ -982,9 +1049,8 @@ export default function App() {
             )}
 
             <p className="field-hint">
-              Built from your resume and their job description. We read the
-              posting, then generate your prep brief — predicted questions,
-              talking points, and company context.
+              Works with LinkedIn, Greenhouse, Lever, Ashby — any job posting
+              link.
             </p>
           </div>
 
@@ -1059,32 +1125,32 @@ export default function App() {
             </p>
           )}
 
-          {needsSignIn && (
-            <div className="paywall-card" role="status">
-              <p className="paywall-title">Sign in to generate your brief</p>
-              <p className="paywall-copy">
-                Create a free account — 3 briefs included, no credit card.
-              </p>
-              <div className="paywall-actions">
-                <Link to="/signup" className="btn-primary paywall-cta">
-                  Create free account
-                </Link>
-                <Link to="/login" className="paywall-secondary">
-                  Sign in
-                </Link>
-              </div>
-            </div>
-          )}
-
           {atFreeLimit && (
             <div className="paywall-card" role="status">
               <p className="paywall-title">You&apos;ve used all 3 free briefs</p>
               <p className="paywall-copy">
-                Upgrade to keep generating personalized interview prep.
+                {user
+                  ? 'Upgrade to keep generating personalized interview prep.'
+                  : 'Create a free account or upgrade to keep generating personalized interview prep.'}
               </p>
-              <Link to="/pricing" className="btn-primary paywall-cta">
-                View plans →
-              </Link>
+              <div className="paywall-actions">
+                {!user && (
+                  <>
+                    <Link to="/signup" className="btn-primary paywall-cta">
+                      Create free account
+                    </Link>
+                    <Link to="/login" className="paywall-secondary">
+                      Sign in
+                    </Link>
+                  </>
+                )}
+                <Link
+                  to="/pricing"
+                  className={user ? 'btn-primary paywall-cta' : 'paywall-secondary'}
+                >
+                  View plans →
+                </Link>
+              </div>
             </div>
           )}
 
@@ -1092,9 +1158,9 @@ export default function App() {
         <button
               type="submit"
               className="btn-primary"
-              disabled={loading || needsSignIn || atFreeLimit}
+              disabled={loading || atFreeLimit}
             >
-              Generate my brief →
+              Get my free brief →
             </button>
             {loading && (
               <div className="loading-inline" aria-live="polite">
@@ -1235,6 +1301,78 @@ export default function App() {
                 )}
               </div>
             </div>
+            {briefLogId &&
+              !activeSavedId &&
+              !loading &&
+              briefSections.length > 0 &&
+              markdown !== '' && (
+                <div className="brief-feedback-card card">
+                  {feedbackSubmitted ? (
+                    <p className="brief-feedback-thanks" role="status">
+                      Thanks — your feedback helps us improve PrepBrief.
+                    </p>
+                  ) : (
+                    <form
+                      className="brief-feedback-form"
+                      onSubmit={handleSubmitFeedback}
+                    >
+                      <h3 className="brief-feedback-title">
+                        How was this brief?
+                      </h3>
+                      <p className="brief-feedback-copy">
+                        Quick rating for user testing — optional written feedback
+                        below.
+                      </p>
+                      <div className="brief-feedback-rating">
+                        <label htmlFor="brief-rating">Rating (1–10)</label>
+                        <select
+                          id="brief-rating"
+                          name="rating"
+                          value={feedbackRating}
+                          onChange={(ev) => setFeedbackRating(ev.target.value)}
+                          required
+                          disabled={feedbackSubmitting}
+                        >
+                          <option value="">Select…</option>
+                          {Array.from({ length: 10 }, (_, i) => i + 1).map(
+                            (n) => (
+                              <option key={n} value={String(n)}>
+                                {n}
+                              </option>
+                            ),
+                          )}
+                        </select>
+                      </div>
+                      <div className="brief-feedback-text">
+                        <label htmlFor="brief-feedback">
+                          Feedback (optional)
+                        </label>
+                        <textarea
+                          id="brief-feedback"
+                          name="feedback"
+                          rows={3}
+                          placeholder="What was helpful? What was missing?"
+                          value={feedbackText}
+                          onChange={(ev) => setFeedbackText(ev.target.value)}
+                          disabled={feedbackSubmitting}
+                        />
+                      </div>
+                      {feedbackError && (
+                        <p className="message message-error" role="alert">
+                          {feedbackError}
+                        </p>
+                      )}
+                      <button
+                        type="submit"
+                        className="btn-primary brief-feedback-submit"
+                        disabled={feedbackSubmitting}
+                      >
+                        {feedbackSubmitting ? 'Sending…' : 'Submit feedback'}
+                      </button>
+                    </form>
+                  )}
+                </div>
+              )}
           </section>
         )}
 

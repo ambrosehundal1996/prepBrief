@@ -270,6 +270,51 @@
   font-size: 0.72rem;
 }
 
+.hero-steps {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.65rem 1.25rem;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  list-style: none;
+}
+
+.hero-step {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--pb-page-fg);
+  line-height: 1.3;
+}
+
+.hero-step-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.hero-step-label {
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .hero-steps {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .hero-step {
+    justify-content: flex-start;
+  }
+}
+
 .home-founder-story {
   margin: 1.5rem 0 0;
   padding: 1rem 1.15rem;
@@ -810,6 +855,71 @@ main#top {
   background: rgba(37, 99, 235, 0.08);
   border: 1px solid rgba(37, 99, 235, 0.15);
   font-size: 0.8125rem;
+  color: var(--pb-ink-muted);
+}
+
+.brief-feedback-card {
+  margin-top: 1.5rem;
+  padding: 1rem 1.15rem;
+}
+
+.brief-feedback-title {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--pb-ink);
+}
+
+.brief-feedback-copy {
+  margin: 0 0 0.85rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--pb-ink-muted);
+}
+
+.brief-feedback-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.brief-feedback-rating label,
+.brief-feedback-text label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--pb-ink);
+}
+
+.brief-feedback-rating select,
+.brief-feedback-text textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 0.875rem;
+  border: 1px solid rgba(30, 58, 138, 0.18);
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  background: #fff;
+  color: var(--pb-ink);
+}
+
+.brief-feedback-rating select {
+  max-width: 10rem;
+}
+
+.brief-feedback-text textarea {
+  resize: vertical;
+  min-height: 4.5rem;
+}
+
+.brief-feedback-submit {
+  align-self: flex-start;
+}
+
+.brief-feedback-thanks {
+  margin: 0;
+  font-size: 0.875rem;
   color: var(--pb-ink-muted);
 }
 

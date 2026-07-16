@@ -36,6 +36,7 @@ const {
   deleteUserBrief,
   migrateUserBriefs,
 } = require("./userBriefs");
+const { logBriefGeneration, saveBriefLogFeedback } = require("./briefLogs");
 const { isSupabaseAdminConfigured } = require("./supabaseAdmin");
 
 const MAX_JOB_DESCRIPTION_CHARS = 80_000;
@@ -218,6 +219,39 @@ function sheetResumeFields(meta, resumeText) {
   };
 }
 
+/** Persist admin log; returns log row id for client feedback. */
+async function logGeneratedBrief({
+  requestId,
+  endpoint,
+  req,
+  gate,
+  job,
+  companyUrlOpt,
+  markdown,
+  elapsedMs,
+  tokenUsage,
+  resumeMeta,
+}) {
+  return logBriefGeneration({
+    requestId,
+    endpoint,
+    userId: req.user?.id ?? null,
+    userEmail: req.user?.email ?? null,
+    plan: gate?.profile?.plan ?? null,
+    jobUrl: job.jobUrl || "",
+    companyUrl: companyUrlOpt || "",
+    markdown,
+    elapsedMs,
+    tokenUsage,
+    resumeAttached: resumeMeta?.attached ?? false,
+  });
+}
+
+function writeSseEvent(res, payload) {
+  if (!res || res.writableEnded) return;
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -307,6 +341,18 @@ app.delete("/api/briefs/:id", requireAuth, async (req, res) => {
   const ok = await deleteUserBrief(req.user.id, req.params.id);
   if (!ok) {
     return res.status(500).json({ error: "Could not delete brief." });
+  }
+  res.json({ ok: true });
+});
+
+/** User testing feedback for a generated brief log row. */
+app.post("/api/brief-logs/:id/feedback", optionalAuth, async (req, res) => {
+  const result = await saveBriefLogFeedback(req.params.id, {
+    feedback: req.body?.feedback,
+    rating: req.body?.rating,
+  });
+  if (!result.ok) {
+    return res.status(400).json({ error: result.error });
   }
   res.json({ ok: true });
 });
@@ -430,7 +476,19 @@ app.post("/api/research", requireAuth, withResearchUpload, async (req, res) => {
         markdown,
       });
     }
-    res.json({ markdown });
+    const logId = await logGeneratedBrief({
+      requestId: reqId,
+      endpoint: "/api/research",
+      req,
+      gate,
+      job,
+      companyUrlOpt,
+      markdown,
+      elapsedMs,
+      tokenUsage,
+      resumeMeta,
+    });
+    res.json({ markdown, logId });
   } catch (err) {
     const elapsedMs = Date.now() - t0;
     console.error(`[api:${reqId}] error after ${elapsedMs}ms`, err.code || err.name, err.message);
@@ -586,6 +644,21 @@ app.post("/api/research/stream", requireAuth, withResearchUpload, async (req, re
           markdown: streamResult.markdown || "",
         });
       }
+      const logId = await logGeneratedBrief({
+        requestId: reqId,
+        endpoint: "/api/research/stream",
+        req,
+        gate,
+        job,
+        companyUrlOpt,
+        markdown: streamResult.markdown || "",
+        elapsedMs: streamResult.elapsedMs ?? elapsedMs,
+        tokenUsage: streamResult.tokenUsage,
+        resumeMeta,
+      });
+      if (logId) {
+        writeSseEvent(res, { type: "logged", logId });
+      }
       logFromRequest(req, {
         requestId: reqId,
         endpoint: "/api/research/stream",
@@ -689,7 +762,7 @@ function startServer() {
   app.listen(PORT, () => {
     console.log(`Server listening on http://localhost:${PORT}`);
     console.log(
-      "API: GET /health, GET /api/account, GET /api/briefs, POST /api/briefs/migrate, DELETE /api/briefs/:id, POST /api/stripe/checkout, POST /api/stripe/webhook, POST /api/research, POST /api/research/stream",
+      "API: GET /health, GET /api/account, GET /api/briefs, POST /api/briefs/migrate, DELETE /api/briefs/:id, POST /api/brief-logs/:id/feedback, POST /api/stripe/checkout, POST /api/stripe/webhook, POST /api/research, POST /api/research/stream",
     );
     if (isSupabaseAdminConfigured()) {
       console.log("[auth] Supabase auth + usage tracking enabled.");
