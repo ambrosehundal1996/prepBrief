@@ -13,11 +13,9 @@ function brandClass({ isActive }) {
 }
 
 export function TopNav({
-  hasBrief,
   savedBriefsCount,
   resumePanelOpen,
   savedBriefsPanelOpen,
-  onClosePanels,
   onToggleResumePanel,
   onOpenResumePanel,
   onToggleSavedBriefsPanel,
@@ -59,22 +57,6 @@ export function TopNav({
           <span className="top-nav-brand-text">PrepBrief</span>
         </NavLink>
         <nav className="top-nav-app" aria-label="Main navigation">
-          <Link
-            to="/#create-brief"
-            className="top-nav-app-link"
-            onClick={onClosePanels}
-          >
-            Create brief
-          </Link>
-          {hasBrief && (
-            <Link
-              to="/#your-brief"
-              className="top-nav-app-link"
-              onClick={onClosePanels}
-            >
-              Your brief
-            </Link>
-          )}
           <button
             type="button"
             className={

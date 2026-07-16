@@ -838,14 +838,9 @@ export default function App() {
       <div className="layout-shell">
         <div className="layout-main">
           <TopNav
-            hasBrief={markdown !== null}
             savedBriefsCount={savedBriefs.length}
             resumePanelOpen={resumePanelOpen}
             savedBriefsPanelOpen={savedBriefsPanelOpen}
-            onClosePanels={() => {
-              setSavedBriefsPanelOpen(false)
-              setResumePanelOpen(false)
-            }}
             onToggleResumePanel={toggleResumePanel}
             onOpenResumePanel={openResumePanel}
             onToggleSavedBriefsPanel={toggleSavedBriefsPanel}
