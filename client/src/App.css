@@ -234,42 +234,6 @@
   line-height: 1.5;
 }
 
-.hero-auth {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 0.65rem 0.85rem;
-  margin-top: 1.15rem;
-}
-
-.hero-auth-primary {
-  text-decoration: none;
-}
-
-.hero-auth-secondary {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--pb-accent);
-  text-decoration: none;
-}
-
-.hero-auth-secondary:hover {
-  text-decoration: underline;
-}
-
-.hero-auth-hint {
-  flex: 1 1 100%;
-  margin: 0.35rem 0 0;
-  font-size: 0.75rem;
-  line-height: 1.45;
-  color: var(--pb-page-fg-muted);
-}
-
-.hero-auth-hint code {
-  font-size: 0.72rem;
-}
-
 .hero-steps {
   display: flex;
   flex-wrap: wrap;
@@ -313,18 +277,6 @@
   .hero-step {
     justify-content: flex-start;
   }
-}
-
-.home-founder-story {
-  margin: 1.5rem 0 0;
-  padding: 1rem 1.15rem;
-  border-left: 3px solid rgba(56, 189, 248, 0.55);
-  border-radius: 0 10px 10px 0;
-  background: rgba(255, 255, 255, 0.06);
-  font-size: 0.9375rem;
-  line-height: 1.55;
-  color: var(--pb-page-fg);
-  font-style: normal;
 }
 
 #create-brief {
@@ -684,6 +636,27 @@ main#top {
   color: #64748b;
   font-weight: 500;
   font-size: 0.85em;
+}
+
+.resume-attached-field {
+  margin-bottom: 0;
+}
+
+.resume-attached-copy {
+  margin: 0.35rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--pb-ink-muted);
+}
+
+.resume-attached-copy strong {
+  color: var(--pb-ink);
+  font-weight: 600;
+}
+
+.resume-attached-change {
+  font-size: inherit;
+  vertical-align: baseline;
 }
 
 .resume-file-input {
@@ -1091,6 +1064,13 @@ main#top {
   width: auto;
   padding: 0.5rem 1.1rem;
   font-size: 0.875rem;
+}
+
+.cta-free-limit {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--pb-ink-muted);
+  font-weight: 500;
 }
 
 .submit-row .loading-inline {

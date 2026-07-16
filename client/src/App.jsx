@@ -157,7 +157,19 @@ export default function App() {
     account.canGenerate === false &&
     (account.plan === 'free' || !account.subscriptionStatus)
   const needsSignIn = authConfigured && !authLoading && !user
-  const showAuthPrompt = !authLoading && !user
+
+  const ctaFreeLimitLabel = useMemo(() => {
+    if (authConfigured && user && account?.configured) {
+      if (account.limit == null) return null
+      const remaining = account.remaining ?? 0
+      const limit = account.limit
+      if (account.plan === 'free') {
+        return `${remaining} of ${limit} free brief${limit === 1 ? '' : 's'} left`
+      }
+      return `${remaining} of ${limit} brief${limit === 1 ? '' : 's'} left this month`
+    }
+    return '3 free briefs included'
+  }, [authConfigured, user, account])
 
   const [jobMode, setJobMode] = useState('url') // 'url' | 'paste' | 'file'
   const [jobUrl, setJobUrl] = useState('')
@@ -452,6 +464,11 @@ export default function App() {
         setClientError('Please upload the job description as a PDF or .docx.')
         return
       }
+    }
+
+    if (!resumeFile) {
+      setClientError('Please upload your resume (PDF or .docx) to generate a brief.')
+      return
     }
 
     if (needsSignIn) {
@@ -849,24 +866,6 @@ export default function App() {
               Paste the job link. We research the company and read your resume.
               You get a game plan in 60 seconds.
             </p>
-            {showAuthPrompt && (
-              <div className="hero-auth">
-                <Link to="/signup" className="btn-primary hero-auth-primary">
-                  Create free account — 3 briefs included
-                </Link>
-                <Link to="/login" className="hero-auth-secondary">
-                  Sign in
-                </Link>
-                {!authConfigured && (
-                  <p className="hero-auth-hint">
-                    Auth requires{' '}
-                    <code>VITE_SUPABASE_URL</code> and{' '}
-                    <code>VITE_SUPABASE_ANON_KEY</code> in{' '}
-                    <code>client/.env</code>, then restart the dev server.
-                  </p>
-                )}
-              </div>
-            )}
           </header>
         )}
 
@@ -880,7 +879,7 @@ export default function App() {
           className="resume-file-input"
           tabIndex={-1}
           disabled={loading}
-          aria-label="Resume file: PDF or .docx, optional — personalizes your brief"
+          aria-label="Resume file: PDF or .docx — required to personalize your brief"
           onChange={(ev) => setResumeFromFileList(ev.target.files)}
         />
         {!savedBriefsPanelOpen && !resumePanelOpen && (
@@ -1054,10 +1053,28 @@ export default function App() {
             </p>
           </div>
 
-          {!resumeFile && (
+          {resumeFile ? (
+            <div className="field resume-attached-field">
+              <span className="field-label" id="resume-attached-heading">
+                Your resume
+              </span>
+              <p className="resume-attached-copy">
+                <strong>{resumeFile.name}</strong> will be used to personalize
+                your brief.{' '}
+                <button
+                  type="button"
+                  className="btn-text resume-attached-change"
+                  disabled={loading}
+                  onClick={() => openResumePanel()}
+                >
+                  View or replace
+                </button>
+              </p>
+            </div>
+          ) : (
             <div className="field">
               <span className="field-label" id="resume-field-heading">
-                Resume <span className="field-optional">(optional)</span>
+                Your resume
               </span>
               <button
                 type="button"
@@ -1096,33 +1113,17 @@ export default function App() {
                 <span className="resume-dropzone__main">
                   Drop your resume here or click to browse
                   <span className="resume-dropzone__sub">
-                    PDF or .docx — optional, but it unlocks the personalized
-                    sections of your brief
+                    PDF or .docx — required to personalize your brief
                   </span>
                 </span>
               </button>
               <p className="field-hint">
-                Without a resume you still get the company research; with one,
-                every section is tailored to your background. After you upload
-                once, we keep your resume in this browser. Use{' '}
-                <strong>My resume</strong> in the top navigation to preview or
-                replace it.
+                We read your resume alongside the job posting so every section is
+                tailored to your background. After the first upload, we keep it
+                in this browser — use <strong>My resume</strong> in the nav to
+                preview or replace it.
               </p>
             </div>
-          )}
-
-          {authConfigured && user && account?.configured && (
-            <p className="usage-banner" role="status">
-              {account.limit == null ? (
-                <>Unlimited briefs on your {account.plan.replace('_', ' ')} plan.</>
-              ) : (
-                <>
-                  {account.remaining ?? 0} of {account.limit} brief
-                  {(account.limit ?? 0) === 1 ? '' : 's'} remaining
-                  {account.plan === 'free' ? ' (free tier)' : ' this month'}.
-                </>
-              )}
-            </p>
           )}
 
           {atFreeLimit && (
@@ -1162,6 +1163,11 @@ export default function App() {
             >
               Get my free brief →
             </button>
+            {ctaFreeLimitLabel && (
+              <span className="cta-free-limit" role="status">
+                {ctaFreeLimitLabel}
+              </span>
+            )}
             {loading && (
               <div className="loading-inline" aria-live="polite">
                 <span className="spinner" aria-hidden />
@@ -1182,13 +1188,6 @@ export default function App() {
             </p>
           )}
         </form>
-        )}
-
-        {!savedBriefsPanelOpen && !resumePanelOpen && (
-          <blockquote className="home-founder-story">
-            I used to reschedule interviews when I didn&apos;t feel ready. So I
-            built the thing that makes me feel ready in 60 seconds.
-          </blockquote>
         )}
 
         {markdown !== null && (
