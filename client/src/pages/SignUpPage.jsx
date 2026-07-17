@@ -54,7 +54,7 @@ export default function SignUpPage() {
     <main className="auth-page card" aria-labelledby="signup-heading">
       <h1 id="signup-heading">Create account</h1>
       <p className="auth-lead">
-        Get 3 free interview briefs. No credit card required.
+        Get started with interview briefs. No credit card required.
       </p>
       <form onSubmit={handleSubmit} noValidate>
         <div className="field">

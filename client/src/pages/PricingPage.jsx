@@ -10,7 +10,7 @@ const tiers = [
     tagline: 'Try it out',
     featured: false,
     features: [
-      '3 briefs total',
+      'Unlimited briefs',
       'Company research sections',
       'Predicted interview questions',
       'Why us talking points',
@@ -84,7 +84,7 @@ export default function PricingPage() {
           Simple pricing
         </h1>
         <p className="marketing-lead">
-          3 free briefs when you sign up. Upgrade when you need more.
+          Sign up free. Upgrade when you need more.
         </p>
 
         {error && (

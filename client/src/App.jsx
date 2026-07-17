@@ -151,25 +151,21 @@ export default function App() {
     refreshAccount,
   } = useAuth()
 
-  const atFreeLimit =
-    authConfigured &&
-    account?.configured &&
-    account.canGenerate === false &&
-    (account.plan === 'free' || !account.subscriptionStatus)
   const needsSignIn = authConfigured && !authLoading && !user
 
-  const ctaFreeLimitLabel = useMemo(() => {
-    if (authConfigured && user && account?.configured) {
-      if (account.limit == null) return null
-      const remaining = account.remaining ?? 0
-      const limit = account.limit
-      if (account.plan === 'free') {
-        return `${remaining} of ${limit} free brief${limit === 1 ? '' : 's'} left`
-      }
-      return `${remaining} of ${limit} brief${limit === 1 ? '' : 's'} left this month`
+  const ctaLimitLabel = useMemo(() => {
+    if (!authConfigured || !user || !account?.configured || account.limit == null) {
+      return null
     }
-    return '3 free briefs included'
+    const remaining = account.remaining ?? 0
+    const limit = account.limit
+    return `${remaining} of ${limit} brief${limit === 1 ? '' : 's'} left this month`
   }, [authConfigured, user, account])
+
+  const atUsageLimit =
+    authConfigured &&
+    account?.configured &&
+    account.canGenerate === false
 
   const [jobMode, setJobMode] = useState('url') // 'url' | 'paste' | 'file'
   const [jobUrl, setJobUrl] = useState('')
@@ -477,9 +473,9 @@ export default function App() {
       return
     }
 
-    if (atFreeLimit) {
+    if (atUsageLimit) {
       setClientError(
-        'You have used all 3 free briefs. Upgrade on the pricing page to keep generating.',
+        'You have reached your plan limit. Upgrade on the pricing page to keep generating.',
       )
       return
     }
@@ -547,7 +543,7 @@ export default function App() {
         if (res.status === 402) {
           setClientError(
             data.error ||
-              'You have used all free briefs. Upgrade to keep generating.',
+              'You have reached your plan limit. Upgrade to keep generating.',
           )
           if (accessToken) void refreshAccount(accessToken)
           return
@@ -1106,29 +1102,14 @@ export default function App() {
             </div>
           )}
 
-          {atFreeLimit && (
+          {atUsageLimit && (
             <div className="paywall-card" role="status">
-              <p className="paywall-title">You&apos;ve used all 3 free briefs</p>
+              <p className="paywall-title">You&apos;ve reached your plan limit</p>
               <p className="paywall-copy">
-                {user
-                  ? 'Upgrade to keep generating personalized interview prep.'
-                  : 'Create a free account or upgrade to keep generating personalized interview prep.'}
+                Upgrade to keep generating personalized interview prep.
               </p>
               <div className="paywall-actions">
-                {!user && (
-                  <>
-                    <Link to="/signup" className="btn-primary paywall-cta">
-                      Create free account
-                    </Link>
-                    <Link to="/login" className="paywall-secondary">
-                      Sign in
-                    </Link>
-                  </>
-                )}
-                <Link
-                  to="/pricing"
-                  className={user ? 'btn-primary paywall-cta' : 'paywall-secondary'}
-                >
+                <Link to="/pricing" className="btn-primary paywall-cta">
                   View plans →
                 </Link>
               </div>
@@ -1139,13 +1120,13 @@ export default function App() {
         <button
               type="submit"
               className="btn-primary"
-              disabled={loading || atFreeLimit}
+              disabled={loading || atUsageLimit}
             >
               Get my free brief →
             </button>
-            {ctaFreeLimitLabel && (
+            {ctaLimitLabel && (
               <span className="cta-free-limit" role="status">
-                {ctaFreeLimitLabel}
+                {ctaLimitLabel}
               </span>
             )}
             {loading && (

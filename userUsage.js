@@ -1,13 +1,16 @@
 /**
- * Per-user brief usage: 3 free briefs, then paid plans via Stripe.
+ * Per-user brief usage. Free-tier limits are disabled for now (user testing).
+ * Paid plans (job_seeker monthly cap, intensive unlimited) still apply when subscribed.
  */
 
 const { getSupabaseAdmin, isSupabaseAdminConfigured } = require("./supabaseAdmin");
 
 const PROFILES_TABLE = "prepbrief_profiles";
 
+/** Kept for logging/analytics; not enforced while free limits are off. */
 const FREE_BRIEF_LIMIT = 3;
 const JOB_SEEKER_MONTHLY_LIMIT = 20;
+const FREE_LIMITS_ENABLED = false;
 
 function currentPeriodStart() {
   const d = new Date();
@@ -49,6 +52,10 @@ function evaluateUsage(profile) {
       remaining,
       reason: remaining > 0 ? undefined : "MONTHLY_LIMIT",
     };
+  }
+
+  if (!FREE_LIMITS_ENABLED) {
+    return { canGenerate: true, limit: null, remaining: null };
   }
 
   const remaining = Math.max(0, FREE_BRIEF_LIMIT - briefsUsed);
@@ -142,8 +149,8 @@ async function getAccountForUser(user) {
       configured: false,
       plan: "free",
       briefsUsed: 0,
-      limit: FREE_BRIEF_LIMIT,
-      remaining: FREE_BRIEF_LIMIT,
+      limit: FREE_LIMITS_ENABLED ? FREE_BRIEF_LIMIT : null,
+      remaining: FREE_LIMITS_ENABLED ? FREE_BRIEF_LIMIT : null,
       canGenerate: true,
       subscriptionStatus: null,
     };
@@ -297,6 +304,7 @@ async function findProfileByStripeCustomerId(customerId) {
 module.exports = {
   PROFILES_TABLE,
   FREE_BRIEF_LIMIT,
+  FREE_LIMITS_ENABLED,
   JOB_SEEKER_MONTHLY_LIMIT,
   getAccountForUser,
   assertCanGenerate,

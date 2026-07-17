@@ -82,7 +82,7 @@ export default function LoginPage() {
       </form>
       <p className="auth-switch">
         No account?{' '}
-        <Link to="/signup">Create one — 3 free briefs included</Link>
+        <Link to="/signup">Create a free account</Link>
       </p>
     </main>
   )
