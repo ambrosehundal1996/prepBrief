@@ -879,24 +879,9 @@ export default function App() {
         />
         {!savedBriefsPanelOpen && !resumePanelOpen && (
         <ol className="hero-steps" aria-label="How it works">
-          <li className="hero-step">
-            <span className="hero-step-icon" aria-hidden="true">
-              1️⃣
-            </span>
-            <span className="hero-step-label">Paste the job link</span>
-          </li>
-          <li className="hero-step">
-            <span className="hero-step-icon" aria-hidden="true">
-              2️⃣
-            </span>
-            <span className="hero-step-label">Add your resume</span>
-          </li>
-          <li className="hero-step">
-            <span className="hero-step-icon" aria-hidden="true">
-              3️⃣
-            </span>
-            <span className="hero-step-label">Get your brief</span>
-          </li>
+          <li className="hero-step">Paste the job link</li>
+          <li className="hero-step">Add your resume</li>
+          <li className="hero-step">Get your brief</li>
         </ol>
         )}
         {!savedBriefsPanelOpen && !resumePanelOpen && (
