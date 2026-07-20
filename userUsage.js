@@ -11,6 +11,8 @@ const PROFILES_TABLE = "prepbrief_profiles";
 const FREE_BRIEF_LIMIT = 3;
 const JOB_SEEKER_MONTHLY_LIMIT = 20;
 const FREE_LIMITS_ENABLED = false;
+/** Beta: allow brief generation without sign-in. Set true when launching paid tiers. */
+const AUTH_REQUIRED_FOR_GENERATION = false;
 
 function currentPeriodStart() {
   const d = new Date();
@@ -194,6 +196,9 @@ async function assertCanGenerate(user) {
     return { ok: true, profile: null };
   }
   if (!user?.id) {
+    if (!AUTH_REQUIRED_FOR_GENERATION) {
+      return { ok: true, profile: null };
+    }
     return {
       ok: false,
       status: 401,
@@ -305,6 +310,7 @@ module.exports = {
   PROFILES_TABLE,
   FREE_BRIEF_LIMIT,
   FREE_LIMITS_ENABLED,
+  AUTH_REQUIRED_FOR_GENERATION,
   JOB_SEEKER_MONTHLY_LIMIT,
   getAccountForUser,
   assertCanGenerate,

@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Routes, Route, Link, useNavigate } from 'react-router-dom'
+import { Routes, Route, Link } from 'react-router-dom'
 import { BriefSectionCard } from './BriefSectionCard'
 import { TopNav } from './components/TopNav.jsx'
 import { useAuth } from './context/AuthContext.jsx'
@@ -141,17 +141,13 @@ const PHASE_NARRATION = {
 }
 
 export default function App() {
-  const navigate = useNavigate()
   const {
     configured: authConfigured,
     user,
     accessToken,
     account,
-    loading: authLoading,
     refreshAccount,
   } = useAuth()
-
-  const needsSignIn = authConfigured && !authLoading && !user
 
   const ctaLimitLabel = useMemo(() => {
     if (!authConfigured || !user || !account?.configured || account.limit == null) {
@@ -164,6 +160,7 @@ export default function App() {
 
   const atUsageLimit =
     authConfigured &&
+    user &&
     account?.configured &&
     account.canGenerate === false
 
@@ -467,12 +464,6 @@ export default function App() {
       return
     }
 
-    if (needsSignIn) {
-      setClientError('Sign in or create an account to generate a brief.')
-      navigate('/signup')
-      return
-    }
-
     if (atUsageLimit) {
       setClientError(
         'You have reached your plan limit. Upgrade on the pricing page to keep generating.',
@@ -536,8 +527,11 @@ export default function App() {
         })
         setMarkdown(null)
         if (res.status === 401) {
-          setClientError('Please sign in to generate a brief.')
-          navigate('/login')
+          setClientError(
+            typeof data.error === 'string'
+              ? data.error
+              : 'Could not verify your session. Try signing in again.',
+          )
           return
         }
         if (res.status === 402) {

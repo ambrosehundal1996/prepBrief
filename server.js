@@ -391,7 +391,7 @@ app.post("/api/stripe/checkout", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/research", requireAuth, withResearchUpload, async (req, res) => {
+app.post("/api/research", optionalAuth, withResearchUpload, async (req, res) => {
   const reqId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
   const parsed = await parseResearchPayload(req);
@@ -559,7 +559,7 @@ app.post("/api/research", requireAuth, withResearchUpload, async (req, res) => {
   }
 });
 
-app.post("/api/research/stream", requireAuth, withResearchUpload, async (req, res) => {
+app.post("/api/research/stream", optionalAuth, withResearchUpload, async (req, res) => {
   const reqId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
   const parsed = await parseResearchPayload(req);
